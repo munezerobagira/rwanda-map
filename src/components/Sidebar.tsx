@@ -1,11 +1,14 @@
 'use client';
 
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  FileJson, 
-  Compass
+import {
+  LayoutDashboard,
+  FileJson,
+  Compass,
+  X,
+  Lock
 } from 'lucide-react';
+import { BASEMAPS, isBasemapAvailable } from '@/lib/basemaps';
 
 interface SidebarProps {
   activeTab: string;
@@ -15,6 +18,8 @@ interface SidebarProps {
   sentinelYear: string;
   setSentinelYear: (year: string) => void;
   availableYears: string[];
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 export default function Sidebar({
@@ -24,7 +29,9 @@ export default function Sidebar({
   setActiveBasemap,
   sentinelYear,
   setSentinelYear,
-  availableYears
+  availableYears,
+  isOpen,
+  onClose
 }: SidebarProps) {
   const navItems = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
@@ -32,28 +39,46 @@ export default function Sidebar({
     { id: 'villages', name: 'Village Registry', icon: FileJson },
   ];
 
-  const basemaps = [
-    { id: 'esri', name: 'Esri World Imagery', group: 'Satellite' },
-    { id: 'sentinel2', name: 'Sentinel-2 Cloudless', group: 'Satellite' },
-    { id: 'blackmarble', name: 'NASA Earth at Night', group: 'Night' },
-    { id: 'dark', name: 'CartoDB Dark Matter', group: 'Vector' },
-    { id: 'osm', name: 'EOX Street Map', group: 'Vector' },
-    { id: 'terrain', name: 'EOX Terrain Light', group: 'Physical' }
-  ];
+  const activeBasemapDef = BASEMAPS.find(bm => bm.id === activeBasemap);
 
   return (
-    <aside className="w-72 bg-[#0d0f13] border-r border-white/[0.06] flex flex-col h-screen shrink-0 text-left z-30 select-none">
+    <>
+      {/* Mobile backdrop overlay - only shown when sidebar is open on small screens */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`w-72 bg-[#0d0f13] border-r border-white/[0.06] flex flex-col h-screen shrink-0 text-left z-50 select-none
+          fixed top-0 left-0 transition-transform duration-300 ease-in-out
+          md:static md:translate-x-0
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
       {/* Sidebar Header */}
       <div className="p-6 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          {/* Logo with Rwanda Flag Blue background */}
-          <div className="w-9 h-9 bg-[#00A3E0] rounded-md flex items-center justify-center font-bold text-[#060709] text-lg shadow-[0_0_15px_rgba(0,163,224,0.4)]">
-            IM
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {/* Logo with Rwanda Flag Blue background */}
+            <div className="w-9 h-9 bg-[#00A3E0] rounded-md flex items-center justify-center font-bold text-[#060709] text-lg shadow-[0_0_15px_rgba(0,163,224,0.4)]">
+              RM
+            </div>
+            <div>
+              <h1 className="font-semibold text-white tracking-wider text-base m-0 font-sans">Rwanda Map</h1>
+              <p className="text-[10px] uppercase text-[#00A3E0] tracking-widest font-semibold opacity-95 m-0 font-mono">Map Intelligence</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-semibold text-white tracking-wider text-base m-0 font-sans">InfraMap</h1>
-            <p className="text-[10px] uppercase text-[#00A3E0] tracking-widest font-semibold opacity-95 m-0 font-mono">Map Intelligence</p>
-          </div>
+          {/* Close button - only visible on small screens */}
+          <button
+            onClick={onClose}
+            className="md:hidden p-1.5 text-[#8c9ba5] hover:text-white hover:bg-white/5 rounded-full transition-colors"
+            aria-label="Close sidebar"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -65,7 +90,10 @@ export default function Sidebar({
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                setActiveTab(item.id);
+                onClose();
+              }}
               className={`w-full text-left nav-item ${isActive ? 'active' : ''}`}
             >
               <Icon className="w-5 h-5 mr-3 shrink-0" />
@@ -83,26 +111,36 @@ export default function Sidebar({
         
         {/* Basemap Options List */}
         <div className="space-y-1.5 mb-3">
-          {basemaps.map(bm => (
-            <button
-              key={bm.id}
-              onClick={() => setActiveBasemap(bm.id)}
-              className={`w-full py-2 px-3 rounded text-xs font-semibold border text-left transition-all duration-300 cursor-pointer flex justify-between items-center ${
-                activeBasemap === bm.id
-                  ? 'bg-[#0d0f13] border-[#00A3E0] text-white shadow-[0_0_8px_rgba(0,163,224,0.25)] font-bold'
-                  : 'bg-transparent border-white/5 text-[#8c9ba5] hover:text-white hover:border-white/10'
-              }`}
-            >
-              <span>{bm.name}</span>
-              <span className="text-[9px] opacity-75 uppercase font-mono font-normal tracking-wide px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.05]">
-                {bm.group}
-              </span>
-            </button>
-          ))}
+          {BASEMAPS.map(bm => {
+            const available = isBasemapAvailable(bm);
+            return (
+              <button
+                key={bm.id}
+                disabled={!available}
+                onClick={() => available && setActiveBasemap(bm.id)}
+                title={!available ? bm.unavailableHint : undefined}
+                className={`w-full py-2 px-3 rounded text-xs font-semibold border text-left transition-all duration-300 flex justify-between items-center ${
+                  !available
+                    ? 'bg-transparent border-white/5 text-[#53606b] cursor-not-allowed opacity-60'
+                    : activeBasemap === bm.id
+                    ? 'bg-[#0d0f13] border-[#00A3E0] text-white shadow-[0_0_8px_rgba(0,163,224,0.25)] font-bold cursor-pointer'
+                    : 'bg-transparent border-white/5 text-[#8c9ba5] hover:text-white hover:border-white/10 cursor-pointer'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  {!available && <Lock className="w-3 h-3 shrink-0" />}
+                  {bm.name}
+                </span>
+                <span className="text-[9px] opacity-75 uppercase font-mono font-normal tracking-wide px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.05]">
+                  {bm.group}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Year Selector for Sentinel-2 */}
-        {activeBasemap === 'sentinel2' && availableYears.length > 0 && (
+        {/* Year Selector - shown for any basemap that exposes an annual timeline */}
+        {activeBasemapDef?.supportsYear && availableYears.length > 0 && (
           <div className="pt-2.5 border-t border-white/[0.04] space-y-1.5 transition-all duration-300">
             <span className="text-[9px] uppercase tracking-wider text-[#53606b] block font-semibold font-mono">
               Imagery Year
@@ -125,6 +163,7 @@ export default function Sidebar({
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

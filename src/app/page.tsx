@@ -4,12 +4,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import { StatsFooter } from '@/components/OverlayCards';
-import { 
-  MapPin, 
-  Wifi, 
-  Activity, 
+import {
+  MapPin,
+  Wifi,
+  Activity,
   X,
-  HelpCircle
+  HelpCircle,
+  Menu,
+  Download,
+  Loader2
 } from 'lucide-react';
 
 // Dynamic import of Leaflet map to prevent SSR window crashes
@@ -29,6 +32,7 @@ const InteractiveMap = dynamic(
 export default function DashboardHome() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [liveTime, setLiveTime] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Grid Data & Map State
   const [boundaryGeoJson, setBoundaryGeoJson] = useState<any>(null);
@@ -37,6 +41,10 @@ export default function DashboardHome() {
   const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(9.3);
   const [isResolvingCoordinate, setIsResolvingCoordinate] = useState(false);
+
+  // Ref to the Administrative Hierarchy detail card + its own export-to-PNG state
+  const villageCardRef = useRef<HTMLDivElement>(null);
+  const [isExportingCard, setIsExportingCard] = useState(false);
 
   // Basemap & Satellite Provider State
   const [activeBasemap, setActiveBasemap] = useState<string>('esri');
@@ -170,8 +178,10 @@ export default function DashboardHome() {
       }
     };
 
-    // Debounce to smooth out layout requests
-    const timer = setTimeout(fetchBoundaries, 150);
+    // Debounce to smooth out layout requests - long enough that a continuous zoom/pan
+    // gesture settles before we fetch and rebuild the (potentially large) vector layer,
+    // avoiding a rebuild on every intermediate frame of the gesture
+    const timer = setTimeout(fetchBoundaries, 350);
     return () => {
       clearTimeout(timer);
       if (controller) controller.abort();
@@ -208,6 +218,87 @@ export default function DashboardHome() {
     setSelectedVillage(villageProperties);
   };
 
+  // Export the Administrative Hierarchy detail card (whatever level is currently
+  // resolved - province through village) as a standalone PNG image, satellite
+  // thumbnail/background and all. html2canvas is loaded lazily since it only
+  // ever runs client-side, in response to a click.
+  const handleExportVillageCard = async () => {
+    if (!villageCardRef.current || isExportingCard) return;
+    setIsExportingCard(true);
+
+    // Tailwind v4's opacity-modifier utilities (bg-[#..]/95, border-white/[0.05], etc.)
+    // compile to `color-mix(in oklab, ...)`, and the browser now reports THAT back from
+    // getComputedStyle in a modern color-function notation (lab()/oklab()/etc.) instead
+    // of plain rgb() - a syntax html2canvas's own (non-browser) CSS parser doesn't
+    // understand, so it throws "unsupported color function" the moment it inspects any
+    // element using one, wherever in the cascade it shows up (background, border,
+    // box-shadow, ...). Rather than patch every property that might carry a color,
+    // wrap getComputedStyle itself for the duration of the export so every string it
+    // returns is passed through a <canvas> 2D context first - canvas always normalizes
+    // any CSS color it's given down to plain sRGB rgb()/rgba(), regardless of what
+    // color space it started in.
+    const nativeGetComputedStyle = window.getComputedStyle.bind(window);
+    const probe = document.createElement('canvas').getContext('2d');
+    const unsafeColorFn = /(?:^|[^a-z-])(lab|lch|oklab|oklch|color)\(/i;
+    const toSafeColor = (value: string): string => {
+      if (!probe || typeof value !== 'string' || !unsafeColorFn.test(value)) return value;
+      try {
+        probe.fillStyle = '#000';
+        probe.fillStyle = value;
+        return probe.fillStyle;
+      } catch {
+        return value;
+      }
+    };
+
+    window.getComputedStyle = ((elt: Element, pseudo?: string | null) => {
+      const original = nativeGetComputedStyle(elt, pseudo ?? undefined);
+      return new Proxy(original, {
+        get(target, prop, receiver) {
+          if (prop === 'getPropertyValue') {
+            return (name: string) => toSafeColor(target.getPropertyValue(name));
+          }
+          const value = Reflect.get(target, prop, receiver);
+          if (typeof value === 'function') return value.bind(target);
+          return typeof value === 'string' ? toSafeColor(value) : value;
+        }
+      });
+    }) as typeof window.getComputedStyle;
+
+    try {
+      const cardEl = villageCardRef.current;
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(cardEl, {
+        backgroundColor: '#0d0f13',
+        useCORS: true,
+        scale: Math.min(window.devicePixelRatio || 1, 2) * 1.5,
+        ignoreElements: (el) => el.classList.contains('export-ignore')
+      });
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const label =
+          selectedVillage?.village || selectedVillage?.cell || selectedVillage?.sector ||
+          selectedVillage?.district || selectedVillage?.province || 'location';
+        const slug = String(label).trim().replace(/\s+/g, '-').toLowerCase();
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${slug}-details-${Date.now()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    } catch (err) {
+      console.error('Failed to export details card', err);
+    } finally {
+      window.getComputedStyle = nativeGetComputedStyle;
+      setIsExportingCard(false);
+    }
+  };
+
   // Get dynamic tag indicating which boundary layer is currently active
   const getActiveLayerName = () => {
     if (currentZoom < 9.0) return 'Provinces Layer';
@@ -228,16 +319,26 @@ export default function DashboardHome() {
         sentinelYear={sentinelYear}
         setSentinelYear={setSentinelYear}
         availableYears={availableYears}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* 2. Main Dashboard Display (Right) */}
-      <div className="flex-1 flex flex-col h-full relative overflow-hidden">
-        
+      <div className="flex-1 flex flex-col h-full relative overflow-hidden min-w-0">
+
         {/* Header telemetry bar */}
-        <header className="h-16 border-b border-white/[0.06] bg-[#0d0f13] flex items-center justify-between px-8 select-none shrink-0 z-20">
+        <header className="h-16 border-b border-white/[0.06] bg-[#0d0f13] flex items-center justify-between px-4 md:px-8 select-none shrink-0 z-20">
           <div className="flex items-center gap-4 font-sans">
-            <span className="text-xs uppercase text-[#8c9ba5] font-semibold tracking-wider">Rwanda Map</span>
-            <div className="h-4 w-[1px] bg-white/10" />
+            {/* Sidebar toggle - visible only on small devices */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-1.5 -ml-1.5 text-[#8c9ba5] hover:text-white hover:bg-white/5 rounded-md transition-colors"
+              aria-label="Open sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="text-xs uppercase text-[#8c9ba5] font-semibold tracking-wider hidden sm:inline">Rwanda Map</span>
+            <div className="h-4 w-[1px] bg-white/10 hidden sm:block" />
             <h2 className="text-sm font-bold text-white uppercase tracking-widest font-mono">
               {activeTab === 'dashboard' ? 'Overview' : activeTab}
             </h2>
@@ -303,13 +404,16 @@ export default function DashboardHome() {
 
                 {/* Village Details Detail Slider Overlay */}
                 {selectedVillage && (
-                  <div className="glass-panel w-96 p-6 absolute left-6 top-32 pointer-events-auto text-left z-20 border border-[#00A3E0]/30 shadow-[0_12px_40px_rgba(0,163,224,0.15)] bg-[#0d0f13]/95">
-                    <div className="flex justify-between items-start mb-4">
+                  <div
+                    ref={villageCardRef}
+                    className="glass-panel w-96 p-8 absolute left-6 top-32 pointer-events-auto text-left z-20 border-2 border-[#00A3E0]/40 shadow-[0_12px_40px_rgba(0,163,224,0.15)] bg-[#0d0f13]/95"
+                  >
+                    <div className="flex justify-between items-start mb-5">
                       <div>
                         <span className="text-[9px] uppercase tracking-wider bg-[#00A3E0]/10 border border-[#00A3E0]/20 px-2 py-0.5 rounded text-[#00A3E0] font-semibold font-mono">
                           {selectedVillage.outside ? 'Spatial Query Error' : 'Administrative hierarchy'}
                         </span>
-                        
+
                         <h4 className="text-lg font-bold text-white mt-1.5 leading-snug font-sans">
                           {selectedVillage.outside ? 'Out of Bounds' :
                            selectedVillage.village ? selectedVillage.village :
@@ -327,16 +431,32 @@ export default function DashboardHome() {
                            `PROVINCE ID: ${selectedVillage.province_id}`}
                         </p>
                       </div>
-                      <button 
-                        onClick={() => setSelectedVillage(null)} 
-                        className="p-1 text-[#8c9ba5] hover:text-[#00A3E0] hover:bg-white/5 rounded-full transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1 export-ignore">
+                        {!selectedVillage.outside && (
+                          <button
+                            onClick={handleExportVillageCard}
+                            disabled={isExportingCard}
+                            title="Export this card as a PNG image"
+                            className="p-1.5 text-[#8c9ba5] hover:text-[#00A3E0] hover:bg-white/5 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isExportingCard ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setSelectedVillage(null)}
+                          className="p-1.5 text-[#8c9ba5] hover:text-[#00A3E0] hover:bg-white/5 rounded-full transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Dynamic Stats Grid */}
-                    <div className="space-y-4 text-xs font-sans">
+                    <div className="space-y-5 text-xs font-sans">
                       {selectedVillage.outside ? (
                         <div className="p-3 bg-white/[0.02] border border-white/[0.04] rounded text-[#8c9ba5]">
                           <p className="mb-2 leading-relaxed">{selectedVillage.message}</p>
@@ -345,30 +465,38 @@ export default function DashboardHome() {
                         </div>
                       ) : (
                         <>
-                          {/* Location hierarchy tree */}
-                          <div className="grid grid-cols-2 gap-3 py-2 border-b border-white/[0.05]">
+                          {/* Location hierarchy tree - only render fields present at (or above) the resolved level */}
+                          <div className="grid grid-cols-2 gap-3 py-3 border-b border-white/[0.05]">
                             <div>
                               <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Province</span>
                               <span className="text-white font-medium">{selectedVillage.province}</span>
                             </div>
-                            <div>
-                              <span className="text-[9px] uppercase text-[#53606b] block font-semibold">District</span>
-                              <span className="text-white font-medium">{selectedVillage.district || 'N/A'}</span>
-                            </div>
+                            {selectedVillage.district && (
+                              <div>
+                                <span className="text-[9px] uppercase text-[#53606b] block font-semibold">District</span>
+                                <span className="text-white font-medium">{selectedVillage.district}</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3 py-2 border-b border-white/[0.05]">
-                            <div>
-                              <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Sector</span>
-                              <span className="text-white font-medium">{selectedVillage.sector || 'N/A'}</span>
+                          {(selectedVillage.sector || selectedVillage.cell) && (
+                            <div className="grid grid-cols-2 gap-3 py-3 border-b border-white/[0.05]">
+                              {selectedVillage.sector && (
+                                <div>
+                                  <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Sector</span>
+                                  <span className="text-white font-medium">{selectedVillage.sector}</span>
+                                </div>
+                              )}
+                              {selectedVillage.cell && (
+                                <div>
+                                  <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Cell</span>
+                                  <span className="text-white font-medium">{selectedVillage.cell}</span>
+                                </div>
+                              )}
                             </div>
-                            <div>
-                              <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Cell</span>
-                              <span className="text-white font-medium">{selectedVillage.cell || 'N/A'}</span>
-                            </div>
-                          </div>
+                          )}
 
-                          <div className="grid grid-cols-2 gap-3 py-2 border-b border-white/[0.05]">
+                          <div className="grid grid-cols-2 gap-3 py-3 border-b border-white/[0.05]">
                             <div>
                               <span className="text-[9px] uppercase text-[#53606b] block font-semibold">Calculated Area</span>
                               <span className="text-[#00A3E0] font-bold font-mono">
@@ -416,8 +544,14 @@ export default function DashboardHome() {
                 )}
               </div>
 
-              {/* Bottom Row: Stats Footer Dashboard */}
-              <StatsFooter />
+              {/* Bottom Row: Stats Footer Dashboard - reflects the active sidebar section */}
+              <StatsFooter
+                activeTab={activeTab}
+                activeLayerName={getActiveLayerName()}
+                currentZoom={currentZoom}
+                featuresInView={boundaryGeoJson?.features?.length || 0}
+                selectedVillage={selectedVillage}
+              />
 
             </div>
           )}
