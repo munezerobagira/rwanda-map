@@ -130,6 +130,28 @@ function simplifyGeometry(geom: any, sqTolerance: number) {
   return geom;
 }
 
+// Every coordinate here comes out of JS's float64 (~17 significant digits),
+// which is absurd precision for an admin boundary - 6 decimal places is
+// already ~11cm on the ground. That excess precision is most of what makes
+// these payloads slow to fetch and parse: rounding it away (measured on the
+// villages layer) cuts the raw JSON by a third and, because gzip/brotli
+// compress short repeating decimals far better than near-random float
+// tails, roughly halves the *compressed* size on top of that.
+function roundCoord(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
+
+function roundGeometry(geom: any): any {
+  if (!geom) return geom;
+  const roundRing = (ring: [number, number][]) => ring.map(([lng, lat]) => [roundCoord(lng), roundCoord(lat)]);
+  if (geom.type === 'Polygon') {
+    return { type: 'Polygon', coordinates: geom.coordinates.map(roundRing) };
+  } else if (geom.type === 'MultiPolygon') {
+    return { type: 'MultiPolygon', coordinates: geom.coordinates.map((poly: any) => poly.map(roundRing)) };
+  }
+  return geom;
+}
+
 // Helper to calculate area of polygon or multipolygon in sq km
 function calculateFeatureAreaKm2(geometry: any): number {
   if (!geometry) return 0;
@@ -235,14 +257,14 @@ class SpatialStore {
         
         const simplifiedFeatures = originalGeojson.features.map((f: any) => ({
           ...f,
-          geometry: simplifyGeometry(f.geometry, sqTolerance)
+          geometry: roundGeometry(simplifyGeometry(f.geometry, sqTolerance))
         }));
-        
+
         geojson = {
           ...originalGeojson,
           features: simplifiedFeatures
         };
-        
+
         // Cache simplified layer to disk
         try {
           fs.writeFileSync(simplifiedPath, JSON.stringify(geojson), 'utf8');
@@ -251,6 +273,15 @@ class SpatialStore {
           console.error(`SpatialStore: Failed to save simplified ${layerName} to disk`, writeErr);
         }
       }
+
+      // A simplified cache written before coordinate rounding was added would
+      // still be full-precision on disk - normalize on every load so an old
+      // cache gets the same payload-size win without needing to be deleted.
+      // No-op (cheap) once the cache is already rounded.
+      geojson.features = (geojson.features || []).map((f: any) => ({
+        ...f,
+        geometry: roundGeometry(f.geometry)
+      }));
 
       this.layers[layerName] = (geojson.features || []).map((f: any) => {
         const bbox = this.computeBBox(f.geometry);
@@ -471,6 +502,138 @@ class SpatialStore {
     result.area_km2 = villageFeature.properties.area_km2;
 
     return result;
+  }
+
+  // A point guaranteed to lie inside the feature (unlike its bbox center,
+  // which can fall outside a concave boundary): scan a horizontal line through
+  // the middle of the largest ring's bbox and take the midpoint of the widest
+  // inside span. Callers resolve hierarchy/geometry from this point.
+  private interiorPoint(feature: BoundaryFeature): [number, number] | null {
+    const polygons: [number, number][][][] =
+      feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+    let best: [number, number] | null = null;
+    let bestWidth = -1;
+
+    for (const rings of polygons) {
+      const outer = rings[0];
+      if (!outer || outer.length < 4) continue;
+      let minLat = Infinity;
+      let maxLat = -Infinity;
+      for (const [, y] of outer) {
+        if (y < minLat) minLat = y;
+        if (y > maxLat) maxLat = y;
+      }
+      const y = (minLat + maxLat) / 2;
+
+      const xs: number[] = [];
+      for (const ring of rings) {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [xi, yi] = ring[i];
+          const [xj, yj] = ring[j];
+          if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) * (xj - xi)) / (yj - yi));
+        }
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const width = xs[k + 1] - xs[k];
+        if (width > bestWidth) {
+          bestWidth = width;
+          best = [(xs[k] + xs[k + 1]) / 2, y];
+        }
+      }
+    }
+    return best;
+  }
+
+  // The single feature of one tier containing a point - geometry included -
+  // so the client can fit/mask a specific ancestor (breadcrumb navigation,
+  // restoring a shared selection) without fetching a whole viewport.
+  public async findFeatureAt(layerName: string, lng: number, lat: number): Promise<BoundaryFeature | null> {
+    await this.loadLayerIfNeeded(layerName);
+    const point: [number, number] = [lng, lat];
+    return this.layers[layerName].find(f => this.isPointInBoundary(point, f)) || null;
+  }
+
+  // Name search across every administrative level (village down to province).
+  // Each layer's features already carry their full ancestor chain (a village
+  // feature has province/district/sector/cell names on it directly), so a
+  // single pass per layer is enough - no cross-layer joins needed.
+  public async searchByName(query: string, limit = 8) {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+
+    await this.loadLayerIfNeeded('provinces');
+    await this.loadLayerIfNeeded('districts');
+    await this.loadLayerIfNeeded('sectors');
+    await this.loadLayerIfNeeded('cells');
+    await this.loadLayerIfNeeded('villages');
+
+    const levels: { layer: string; field: string }[] = [
+      { layer: 'villages', field: 'village' },
+      { layer: 'cells', field: 'cell' },
+      { layer: 'sectors', field: 'sector' },
+      { layer: 'districts', field: 'district' },
+      { layer: 'provinces', field: 'province' }
+    ];
+
+    const results: {
+      level: string;
+      label: string;
+      province?: string;
+      district?: string;
+      sector?: string;
+      cell?: string;
+      village?: string;
+      area_km2?: number;
+      lat: number;
+      lng: number;
+      // [minLng, minLat, maxLng, maxLat] - lets the map fit the shape's real
+      // extent instead of flying to a point at a fixed zoom (a province and a
+      // village need very different zoom levels to look right on screen).
+      bounds: [number, number, number, number];
+    }[] = [];
+
+    for (const { layer, field } of levels) {
+      for (const feature of this.layers[layer]) {
+        const name = feature.properties[field];
+        if (typeof name !== 'string' || !name.toLowerCase().includes(q)) continue;
+
+        const bbox = feature.bbox;
+        const [minLng, minLat, maxLng, maxLat] = bbox || [28.8, -2.9, 30.9, -1.0];
+        const [lng, lat] = this.interiorPoint(feature) ?? [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
+
+        results.push({
+          level: layer.slice(0, -1),
+          label: name,
+          province: feature.properties.province,
+          district: feature.properties.district,
+          sector: feature.properties.sector,
+          cell: feature.properties.cell,
+          village: feature.properties.village,
+          area_km2: feature.properties.area_km2,
+          lat,
+          lng,
+          bounds: [minLng, minLat, maxLng, maxLat]
+        });
+      }
+    }
+
+    // Exact, then prefix, then substring matches; within each, coarser tiers
+    // first (a sector named "Kacyiru" outranks the villages sharing the name).
+    // Each tier is capped so a common name can't fill the list with villages.
+    const tierRank = ['province', 'district', 'sector', 'cell', 'village'];
+    const matchRank = (label: string) => {
+      const l = label.toLowerCase();
+      return l === q ? 0 : l.startsWith(q) ? 1 : 2;
+    };
+    results.sort(
+      (a, b) => matchRank(a.label) - matchRank(b.label) || tierRank.indexOf(a.level) - tierRank.indexOf(b.level)
+    );
+
+    const perTierCap = Math.max(3, Math.ceil(limit / 3));
+    const perTier: Record<string, number> = {};
+    const picked = results.filter((r) => (perTier[r.level] = (perTier[r.level] || 0) + 1) <= perTierCap);
+    return picked.slice(0, limit);
   }
 }
 

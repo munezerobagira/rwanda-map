@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spatialStore } from '@/lib/spatialStore';
+import { compressedJson } from '@/lib/compressJson';
 
 const VALID_LAYERS = ['provinces', 'districts', 'sectors', 'cells', 'villages'];
 
@@ -32,17 +33,17 @@ export async function GET(req: NextRequest) {
     const matchingFeatures = await spatialStore.queryViewport(layer, minLng, minLat, maxLng, maxLat);
     const queryTime = Date.now() - startTime;
 
-    return NextResponse.json({
-      type: 'FeatureCollection',
-      layer,
-      queryTimeMs: queryTime,
-      featuresCount: matchingFeatures.length,
-      features: matchingFeatures
-    }, {
-      headers: {
-        'Cache-Control': 'public, max-age=60, s-maxage=60'
-      }
-    });
+    return compressedJson(
+      req,
+      {
+        type: 'FeatureCollection',
+        layer,
+        queryTimeMs: queryTime,
+        featuresCount: matchingFeatures.length,
+        features: matchingFeatures
+      },
+      { 'Cache-Control': 'public, max-age=60, s-maxage=60' }
+    );
   } catch (err: any) {
     console.error(`API Error in /api/boundaries:`, err);
     return NextResponse.json(

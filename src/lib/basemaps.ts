@@ -34,11 +34,14 @@ export interface BasemapDefinition {
   requiresEnvVar?: string;
   /** Short note shown in the sidebar under a disabled/unavailable basemap. */
   unavailableHint?: string;
+  /** Resolution / character chip shown on the basemap card (e.g. "10 m"). */
+  badge?: string;
 }
 
 export const BASEMAPS: BasemapDefinition[] = [
   {
     id: 'esri',
+    badge: 'Sub-metre',
     name: 'Esri World Imagery',
     group: 'Satellite',
     attribution:
@@ -47,6 +50,7 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'sentinel2',
+    badge: '10 m',
     name: 'Sentinel-2 Cloudless',
     group: 'Satellite',
     attribution: 'Sentinel-2 cloudless &copy; <a href="https://s2maps.eu">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data)',
@@ -55,6 +59,7 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'sentinelhub-truecolor',
+    badge: '10 m · daily',
     name: 'Sentinel-2 True Color (with clouds)',
     group: 'Satellite',
     attribution: 'Sentinel Hub / Copernicus Data Space Ecosystem',
@@ -69,6 +74,7 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'blackmarble',
+    badge: 'Night lights',
     name: 'NASA Earth at Night',
     group: 'Night',
     attribution: 'NASA Earth at Night &copy; NASA &copy; EOX',
@@ -76,6 +82,7 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'dark',
+    badge: 'Minimal',
     name: 'CartoDB Dark Matter',
     group: 'Vector',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -84,6 +91,7 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'osm',
+    badge: 'Streets',
     name: 'EOX Street Map',
     group: 'Vector',
     attribution: 'Street Map &copy; OpenStreetMap contributors &copy; EOX',
@@ -91,12 +99,28 @@ export const BASEMAPS: BasemapDefinition[] = [
   },
   {
     id: 'terrain',
+    badge: 'Relief',
     name: 'EOX Terrain Light',
     group: 'Physical',
     attribution: 'Terrain &copy; EOX IT Services GmbH',
     buildUrl: () => 'https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg'
   }
 ];
+
+// One real tile over central Kigali (z11) used as each basemap card's preview,
+// so the picker shows what the imagery actually looks like here rather than
+// asking people to remember what a provider name means.
+const PREVIEW_TILE = { z: 11, x: 1195, y: 1035 };
+
+export function basemapPreviewUrl(basemap: BasemapDefinition, params: BasemapTimeParams): string {
+  return basemap
+    .buildUrl(params)
+    .replace('{z}', String(PREVIEW_TILE.z))
+    .replace('{x}', String(PREVIEW_TILE.x))
+    .replace('{y}', String(PREVIEW_TILE.y))
+    .replace('{s}', basemap.subdomains?.[0] ?? 'a')
+    .replace('{r}', '');
+}
 
 export function isBasemapAvailable(basemap: BasemapDefinition): boolean {
   if (!basemap.requiresEnvVar) return true;

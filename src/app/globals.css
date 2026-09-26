@@ -1,287 +1,240 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
-/* Design System Variables - STRICTLY RWANDA FLAG COLORS */
+/* -------------------------------------------------------------
+   Design tokens - slate dark theme for a map-first workstation.
+   Never pure black: panels sit a step above the map backdrop and
+   float over it as translucent glass.
+   ------------------------------------------------------------- */
 :root {
-  --bg-dark-base: #060709;
-  --bg-dark-panel: #0d0f13;
-  --bg-dark-card: rgba(13, 16, 22, 0.85);
-  --border-color: rgba(255, 255, 255, 0.06);
-  --border-glow: rgba(0, 163, 224, 0.15);
-  
-  /* Rwanda Flag Colors */
-  --c-blue: #00A3E0;       /* Sky Blue */
-  --c-yellow: #FCD116;     /* Golden Yellow */
-  --c-green: #007A33;      /* Prosperity Green */
-  
-  --text-primary: #f0f2f5;
-  --text-secondary: #8c9ba5;
-  --text-muted: #53606b;
-  
-  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Surface elevation */
+  --surface-base: #090D16;
+  --surface-panel: rgba(15, 23, 42, 0.82);
+  --surface-elevated: #1E293B;
+  --surface-subtle: #334155;
+
+  /* Glass panels */
+  --panel-backdrop-filter: blur(16px) saturate(180%);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.5);
+
+  /* Brand & accents */
+  --brand-primary: #2563EB;
+  --brand-accent: #0EA5E9;
+  --accent-glow: rgba(14, 165, 233, 0.25);
+
+  /* Semantic */
+  --status-success: #10B981;
+  --status-warning: #F59E0B;
+  --status-danger: #EF4444;
+  --status-info: #6366F1;
+
+  /* Foreground - all pass WCAG AA (4.5:1) on --surface-elevated except
+     --text-muted, which is reserved for disabled / decorative text */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* Expose tokens as Tailwind utilities: bg-surface-panel, text-fg-secondary, ... */
+@theme inline {
+  --color-surface-base: var(--surface-base);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-accent: var(--brand-accent);
+  --color-brand: var(--brand-primary);
+  --color-success: var(--status-success);
+  --color-warning: var(--status-warning);
+  --color-danger: var(--status-danger);
+  --color-info: var(--status-info);
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-line: var(--panel-border);
+
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "SF Mono", ui-monospace, monospace;
 }
+
+/* No universal margin/padding reset here: Tailwind's preflight already does
+   it inside @layer base, whereas an unlayered one would beat every p-* / m-*
+   utility and silently strip all panel spacing. */
 
 body {
-  background-color: var(--bg-dark-base);
+  background-color: var(--surface-base);
   color: var(--text-primary);
-  font-family: var(--font-family);
+  font-family: var(--font-sans);
   overflow: hidden;
   height: 100vh;
   width: 100vw;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Scrollbar styling */
+/* Numbers that update in place (zoom, areas, coordinates) must not jitter */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small uppercase category tag - the only place uppercase is used */
+.eyebrow {
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-dark-base);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e252e;
+  background: var(--surface-subtle);
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--c-blue);
-}
 
-/* Animations */
-@keyframes pulse-green {
-  0% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(0, 122, 51, 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 8px rgba(0, 122, 51, 0);
-  }
-  100% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(0, 122, 51, 0);
-  }
-}
-
-.pulse-indicator {
-  width: 8px;
-  height: 8px;
-  background-color: var(--c-green);
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 8px;
-  animation: pulse-green 2s infinite;
-}
-
-/* Sleek Glassmorphism Panels */
+/* -------------------------------------------------------------
+   Floating HUD panels
+   ------------------------------------------------------------- */
 .glass-panel {
-  background: var(--bg-dark-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--surface-panel);
+  backdrop-filter: var(--panel-backdrop-filter);
+  -webkit-backdrop-filter: var(--panel-backdrop-filter);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
 }
 
-.glass-panel:hover {
-  border-color: rgba(0, 163, 224, 0.2);
-  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+/* Indeterminate progress sliver along the top edge of the map */
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+.progress-sliver {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--brand-accent), transparent);
+  animation: progress-slide 1.1s ease-in-out infinite;
 }
 
-/* Glowing text and borders */
-.text-flag-blue { color: var(--c-blue); text-shadow: 0 0 10px rgba(0, 163, 224, 0.3); }
-.text-flag-yellow { color: var(--c-yellow); text-shadow: 0 0 10px rgba(252, 209, 22, 0.3); }
-.text-flag-green { color: var(--c-green); text-shadow: 0 0 10px rgba(0, 122, 51, 0.3); }
-
-/* Left Sidebar Navigation Styles */
-.nav-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  color: var(--text-secondary);
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  font-weight: 500;
-  font-size: 14px;
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out both;
 }
 
-.nav-item:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
+@media (prefers-reduced-motion: reduce) {
+  .progress-sliver,
+  .animate-fade-in {
+    animation: none;
+  }
 }
 
-.nav-item.active {
-  color: var(--text-primary);
-  background: rgba(0, 163, 224, 0.08);
-  border-left: 3px solid var(--c-blue);
-  border-radius: 0 6px 6px 0;
-  box-shadow: inset 5px 0 15px -5px rgba(0, 163, 224, 0.15);
+/* Timeline range input */
+.timeline-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+.timeline-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+}
+.timeline-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+}
+.timeline-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  border: 2px solid var(--text-primary);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+.timeline-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--brand-accent);
+  border: 2px solid var(--text-primary);
+  box-shadow: 0 0 0 4px var(--accent-glow);
 }
 
-.nav-item.active svg {
-  color: var(--c-blue);
-  filter: drop-shadow(0 0 5px rgba(0, 163, 224, 0.5));
-}
-
-/* Leaflet Dark Customizations */
+/* -------------------------------------------------------------
+   Leaflet overrides
+   ------------------------------------------------------------- */
 .leaflet-container {
-  background-color: var(--bg-dark-base) !important;
-  font-family: var(--font-family) !important;
+  background-color: var(--surface-base) !important;
+  font-family: var(--font-sans) !important;
 }
 
 .leaflet-bar {
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid var(--panel-border) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  box-shadow: var(--panel-shadow) !important;
 }
 
 .leaflet-bar a {
-  background-color: var(--bg-dark-panel) !important;
+  background-color: var(--surface-panel) !important;
+  backdrop-filter: var(--panel-backdrop-filter);
   color: var(--text-primary) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1px solid var(--panel-border) !important;
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
 }
 
 .leaflet-bar a:hover {
-  background-color: #1a2029 !important;
-  color: var(--c-blue) !important;
+  background-color: var(--surface-elevated) !important;
+  color: var(--brand-accent) !important;
 }
 
-/* Custom styled popup */
-.leaflet-popup-content-wrapper {
-  background: var(--bg-dark-panel) !important;
-  color: var(--text-primary) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7) !important;
-  padding: 4px !important;
-  font-size: 13px !important;
+.leaflet-control-attribution {
+  background: rgba(9, 13, 22, 0.7) !important;
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+  /* One line, truncated - long provider credits otherwise wrap under the bottom bar on phones */
+  max-width: 100vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.leaflet-popup-tip {
-  background: var(--bg-dark-panel) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
-
-.leaflet-popup-close-button {
+.leaflet-control-attribution a {
   color: var(--text-secondary) !important;
-  padding: 8px !important;
 }
 
-.leaflet-popup-close-button:hover {
-  color: var(--c-blue) !important;
-}
-
-/* Custom Glowing Marker Icons */
-.glow-marker {
-  background: none;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.marker-pin {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px rgba(0,0,0,0.5);
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.marker-pin::after {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  right: -6px;
-  bottom: -6px;
-  border-radius: 50%;
-  border: 1px solid inherit;
-  opacity: 0.4;
-  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-}
-
-@keyframes pulse-ring {
-  0% { transform: scale(0.6); opacity: 1; }
-  100% { transform: scale(1.6); opacity: 0; }
-}
-
-.marker-pin.dc { background-color: var(--c-green); box-shadow: 0 0 15px var(--c-green); }
-.marker-pin.sub { background-color: var(--c-blue); box-shadow: 0 0 15px var(--c-blue); }
-.marker-pin.plant { background-color: var(--c-yellow); box-shadow: 0 0 15px var(--c-yellow); }
-
-/* Slider Switches Styles */
-.switch-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.switch {
-  position: relative;
-  display: inline-block;
-  width: 38px;
-  height: 20px;
-}
-
-.switch input { 
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #202730;
-  transition: .2s;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-.slider:before {
-  position: absolute;
-  content: "";
-  height: 14px;
-  width: 14px;
-  left: 2px;
-  bottom: 2px;
-  background-color: var(--text-secondary);
-  transition: .2s;
-  border-radius: 50%;
-}
-
-input:checked + .slider {
-  background-color: rgba(0, 163, 224, 0.15);
-  border-color: rgba(0, 163, 224, 0.3);
-}
-
-input:checked + .slider:before {
-  transform: translateX(18px);
-  background-color: var(--c-blue);
-  box-shadow: 0 0 8px var(--c-blue);
-}
-
-/* Custom styles for Leaflet Tooltip */
 .leaflet-tooltip {
-  background: rgba(13, 15, 19, 0.95) !important;
+  background: var(--surface-elevated) !important;
   color: var(--text-primary) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.6) !important;
+  border: 1px solid var(--panel-border) !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6) !important;
   font-weight: 500 !important;
-  border-radius: 4px !important;
-  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  padding: 5px 9px !important;
+}
+.leaflet-tooltip::before {
+  display: none;
 }
