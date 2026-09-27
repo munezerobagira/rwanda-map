@@ -5,13 +5,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Download, Crop, Plus, Minus, Maximize } from 'lucide-react';
 import { BASEMAPS, isBasemapAvailable } from '@/lib/basemaps';
-import {
-  ADMIN_LEVELS,
-  AdminLevel,
-  CASING,
-  HIGHLIGHT_COLOR,
-  levelOfProperties
-} from '@/lib/adminLevels';
+import { CASING, COUNTRY_TIER, HIGHLIGHT_COLOR, levelForZoom, parentLevel } from '@/lib/adminLevels';
+import { BoundaryTiles } from '@/lib/boundaryTiles';
 
 type BoundaryGeometry = GeoJSON.Polygon | GeoJSON.MultiPolygon;
 
@@ -27,10 +22,12 @@ export interface ViewportInsets {
 
 interface InteractiveMapProps {
   initialView?: { lat: number; lng: number; zoom: number };
-  /** A boundary polygon was clicked - its properties, the click point and its geometry. */
-  onSelectFeature: (props: Record<string, any>, latlng: { lat: number; lng: number }, geometry: BoundaryGeometry) => void;
-  /** Empty map (no boundary under the pointer) was clicked. */
-  onMapClick: (lat: number, lng: number) => void;
+  /** Map clicked - `zoom` tells the caller which tier was active. */
+  onMapClick: (lat: number, lng: number, zoom: number) => void;
+  /** Boundary tiles started/finished loading. */
+  onBoundaryLoading: (loading: boolean) => void;
+  /** Active tier's features in view and mean tile fetch time, after each load. */
+  onBoundaryStats: (stats: { count: number; ms: number | null }) => void;
   onViewportChange: (viewport: {
     minLng: number;
     minLat: number;
@@ -40,8 +37,6 @@ interface InteractiveMapProps {
     centerLat: number;
     centerLng: number;
   }) => void;
-  boundaryGeoJson: any;
-  parentBoundaryGeoJson: any;
   activeBasemap: string;
   sentinelYear: string;
   // `nonce` must change on every request so re-selecting the same spot still
@@ -63,39 +58,6 @@ interface InteractiveMapProps {
 const RWANDA_CENTER: L.LatLngTuple = [-1.9403, 29.8739];
 const RWANDA_ZOOM = 9.3;
 
-// Line width grows gently as you zoom past the tier's entry zoom, so a tier
-// that looks right when it first appears doesn't turn hairline-thin (or
-// clunky) a couple of levels later.
-function zoomScale(zoom: number, level: AdminLevel) {
-  return Math.min(1.6, Math.max(0.85, 1 + (zoom - level.minZoom) * 0.12));
-}
-
-function strokeFor(level: AdminLevel, zoom: number): L.PathOptions {
-  const s = level.stroke;
-  return {
-    color: s.color,
-    weight: s.weight * zoomScale(zoom, level),
-    opacity: s.opacity,
-    dashArray: s.dashArray,
-    lineJoin: 'round',
-    // fill stays on (at 0 opacity) so the canvas renderer still hit-tests the
-    // polygon interior for hover/click
-    fill: true,
-    fillColor: s.color,
-    fillOpacity: 0
-  };
-}
-
-function casingFor(level: AdminLevel, zoom: number): L.PathOptions {
-  return {
-    color: CASING.color,
-    weight: level.stroke.weight * zoomScale(zoom, level) + CASING.extraWeight,
-    opacity: CASING.opacity * Math.min(1, level.stroke.opacity + 0.3),
-    fill: false,
-    lineJoin: 'round'
-  };
-}
-
 // Outer rings of the selected geometry as holes cut out of a world-covering
 // polygon - the classic inverted mask.
 function maskLatLngs(geometry: BoundaryGeometry): L.LatLngExpression[][] {
@@ -107,11 +69,10 @@ function maskLatLngs(geometry: BoundaryGeometry): L.LatLngExpression[][] {
 
 export default function InteractiveMap({
   initialView,
-  onSelectFeature,
   onMapClick,
+  onBoundaryLoading,
+  onBoundaryStats,
   onViewportChange,
-  boundaryGeoJson,
-  parentBoundaryGeoJson,
   activeBasemap,
   sentinelYear,
   flyTo,
@@ -125,28 +86,29 @@ export default function InteractiveMap({
 
   // Latest callbacks/insets, read from long-lived Leaflet handlers registered
   // once at mount - without this they'd call the first render's closures.
-  const onSelectFeatureRef = useRef(onSelectFeature);
   const onMapClickRef = useRef(onMapClick);
+  const onBoundaryLoadingRef = useRef(onBoundaryLoading);
+  const onBoundaryStatsRef = useRef(onBoundaryStats);
   const onViewportChangeRef = useRef(onViewportChange);
   const insetsRef = useRef(insets);
   useEffect(() => {
-    onSelectFeatureRef.current = onSelectFeature;
     onMapClickRef.current = onMapClick;
+    onBoundaryLoadingRef.current = onBoundaryLoading;
+    onBoundaryStatsRef.current = onBoundaryStats;
     onViewportChangeRef.current = onViewportChange;
     insetsRef.current = insets;
   });
 
   const tileLayersRef = useRef<Map<string, L.TileLayer>>(new Map());
 
-  // Each boundary set is drawn twice - a dark casing underneath, then the
-  // colored line - in its own pane/canvas so parent context always sits under
-  // the active tier and the focus mask sits over both.
-  const renderersRef = useRef<{ parent: L.Canvas; active: L.Canvas; mask: L.Canvas; focus: L.Canvas } | null>(null);
-  const boundaryLayerRef = useRef<L.GeoJSON | null>(null);
-  const boundaryCasingRef = useRef<L.GeoJSON | null>(null);
-  const parentLayerRef = useRef<L.GeoJSON | null>(null);
-  const parentCasingRef = useRef<L.GeoJSON | null>(null);
+  // Vector renderers for the hover highlight and focus mask/outline; tier
+  // boundaries and the national border are canvas tiles (BoundaryTiles).
+  // SVG, not canvas: these are a handful of paths, and an SVG layer is simply
+  // moved by the compositor on pan/zoom, whereas a viewport-sized canvas
+  // (2880x1800 with padding) must be repainted and re-uploaded on every move.
+  const renderersRef = useRef<{ hover: L.SVG; mask: L.SVG; focus: L.SVG } | null>(null);
   const focusLayerRef = useRef<L.LayerGroup | null>(null);
+  const boundaryTilesRef = useRef<BoundaryTiles | null>(null);
 
   const [isExporting, setIsExporting] = useState(false);
 
@@ -173,7 +135,11 @@ export default function InteractiveMap({
       wheelDebounceTime: 100, // Coalesce fast scroll-wheel ticks so intermediate frames don't each trigger a boundary refetch/rebuild
       wheelPxPerZoomLevel: 100,
       inertia: true,
-      preferCanvas: true
+      preferCanvas: true,
+      // Tile fade-in gives every tile `will-change: opacity`, promoting each of
+      // the ~100 basemap + boundary tiles to its own compositor layer - the
+      // single biggest main-thread cost while panning/zooming (layer commit).
+      fadeAnimation: false
     });
 
     mapRef.current = map;
@@ -185,12 +151,14 @@ export default function InteractiveMap({
       if (!interactive) pane.style.pointerEvents = 'none';
       return name;
     };
-    // overlayPane is 400 - parent context under it, focus mask + outline over it
+    // Tier tiles sit under the hover highlight and the focus mask/outline.
+    // Nothing here takes pointer events - hover and click are handled on the
+    // map itself against the loaded tile data.
+    makePane('boundaries', 400, false);
     renderersRef.current = {
-      parent: L.canvas({ pane: makePane('parentBoundaries', 390, false), padding: 0.5 }),
-      active: L.canvas({ padding: 0.5 }),
-      mask: L.canvas({ pane: makePane('focusMask', 440, false), padding: 0.5 }),
-      focus: L.canvas({ pane: makePane('focusOutline', 450, false), padding: 0.5 })
+      hover: L.svg({ pane: makePane('hoverHighlight', 420, false), padding: 0.5 }),
+      mask: L.svg({ pane: makePane('focusMask', 440, false), padding: 0.5 }),
+      focus: L.svg({ pane: makePane('focusOutline', 450, false), padding: 0.5 })
     };
 
     // Shared tuning applied to every tile layer: avoids fetching/painting new tiles
@@ -221,25 +189,6 @@ export default function InteractiveMap({
 
     tileLayersRef.current.get(activeBasemap)?.addTo(map);
 
-    // Static national outline - always visible context under every tier
-    fetch('/data/country boundary.geojson')
-      .then(res => res.json())
-      .then(data => {
-        if (!mapRef.current || !renderersRef.current) return;
-        const renderer = renderersRef.current.parent;
-        L.geoJSON(data, {
-          style: { color: CASING.color, weight: 4, opacity: 0.5, fill: false },
-          interactive: false,
-          renderer
-        } as L.GeoJSONOptions).addTo(mapRef.current);
-        L.geoJSON(data, {
-          style: { color: '#F8FAFC', weight: 2, opacity: 0.7, fill: false },
-          interactive: false,
-          renderer
-        } as L.GeoJSONOptions).addTo(mapRef.current);
-      })
-      .catch(err => console.error('Failed to load Rwanda country outline', err));
-
     const updateViewport = () => {
       const bounds = map.getBounds();
       const center = map.getCenter();
@@ -257,9 +206,101 @@ export default function InteractiveMap({
     map.on('moveend', updateViewport);
 
     const handleClick = (e: L.LeafletMouseEvent) => {
-      onMapClickRef.current(e.latlng.lat, e.latlng.lng);
+      onMapClickRef.current(e.latlng.lat, e.latlng.lng, map.getZoom());
     };
     map.on('click', handleClick);
+
+    // ---- Boundary tiles: the tier for the current zoom plus its parent ----
+    const tiles = new BoundaryTiles({ pane: 'boundaries', outline: COUNTRY_TIER });
+    boundaryTilesRef.current = tiles;
+    let wasLoading = false;
+    const reportLoading = () => {
+      const loading = tiles.isBusy();
+      if (loading !== wasLoading) {
+        wasLoading = loading;
+        onBoundaryLoadingRef.current(loading);
+      }
+    };
+    const reportStats = () => {
+      tiles.visibleFeatureCount().then((count) => onBoundaryStatsRef.current({ count, ms: tiles.averageFetchMs() }));
+    };
+    tiles.on('loading', reportLoading);
+    tiles.on('load redrawprogress', () => {
+      reportLoading();
+      if (!tiles.isBusy()) reportStats();
+    });
+
+    const syncTiers = () => {
+      const active = levelForZoom(map.getZoom());
+      const parent = parentLevel(active);
+      tiles.setTiers(parent ? [parent, active] : [active]);
+      reportLoading();
+    };
+    syncTiers();
+    tiles.addTo(map);
+    map.on('zoomend', syncTiers);
+    map.on('moveend', reportStats);
+
+    // ---- Hover: hit-test loaded tile data once per frame; draw the hovered
+    // shape into its own small SVG overlay instead of redrawing tiles ----
+    const hoverTooltip = L.tooltip({ direction: 'top', offset: [0, -12], className: 'leaflet-tooltip' });
+    let hoverFrame = 0;
+    let hoverSeq = 0; // hit-tests are async (worker) - only the latest may apply
+    let lastHoverEvent: L.LeafletMouseEvent | null = null;
+    let hoveredId: number | null = null;
+    let hoverLayer: L.LayerGroup | null = null;
+    const clearHover = () => {
+      hoverSeq++;
+      hoveredId = null;
+      hoverLayer?.remove();
+      hoverLayer = null;
+      map.closeTooltip(hoverTooltip);
+      map.getContainer().style.cursor = '';
+    };
+    const updateHover = async () => {
+      hoverFrame = 0;
+      const e = lastHoverEvent;
+      const level = tiles.activeTier;
+      if (!e || !level || !renderersRef.current) return;
+      const seq = ++hoverSeq;
+      const feature = await tiles.featureAt(e.latlng);
+      if (seq !== hoverSeq) return;
+      if (!feature) {
+        if (hoveredId !== null) clearHover();
+        return;
+      }
+      if (feature.id !== hoveredId) {
+        hoveredId = feature.id;
+        hoverLayer?.remove();
+        hoverLayer = null;
+        hoverTooltip.setContent(
+          `<div class="font-sans text-left"><div class="text-[12px] font-semibold text-fg">${feature.n ?? ''}</div><div class="text-[11px] text-fg-secondary">${level.label} · ${feature.p ?? 'Rwanda'}</div></div>`
+        );
+        map.getContainer().style.cursor = 'pointer';
+        const shape = await tiles.shapeOf(feature.id);
+        if (seq !== hoverSeq && hoveredId !== feature.id) return;
+        const renderer = renderersRef.current?.hover;
+        if (shape && renderer && hoveredId === feature.id && !hoverLayer) {
+          hoverLayer = L.layerGroup([
+            L.polygon(shape.fill, { renderer, stroke: false, fillColor: HIGHLIGHT_COLOR, fillOpacity: level.highlightFill, interactive: false }),
+            L.polyline(shape.outline, { renderer, color: HIGHLIGHT_COLOR, weight: 2, opacity: 1, lineJoin: 'round', interactive: false })
+          ]).addTo(map);
+        }
+      }
+      hoverTooltip.setLatLng(e.latlng);
+      if (!map.hasLayer(hoverTooltip)) hoverTooltip.openOn(map);
+    };
+    const handleMouseMove = (e: L.LeafletMouseEvent) => {
+      lastHoverEvent = e;
+      if (!hoverFrame) hoverFrame = requestAnimationFrame(updateHover);
+    };
+    const handleMouseOut = () => {
+      lastHoverEvent = null;
+      clearHover();
+    };
+    map.on('mousemove', handleMouseMove);
+    map.on('mouseout', handleMouseOut);
+    map.on('zoomstart', clearHover);
 
     // Guarded by `cancelled` because React Strict Mode double-invokes this
     // effect in dev, and the timer could otherwise fire after map.remove().
@@ -273,9 +314,17 @@ export default function InteractiveMap({
     return () => {
       cancelled = true;
       clearTimeout(initialFetchTimer);
+      cancelAnimationFrame(hoverFrame);
       map.off('moveend', updateViewport);
       map.off('click', handleClick);
+      map.off('zoomend', syncTiers);
+      map.off('moveend', reportStats);
+      map.off('mousemove', handleMouseMove);
+      map.off('mouseout', handleMouseOut);
+      map.off('zoomstart', clearHover);
+      if (wasLoading) onBoundaryLoadingRef.current(false);
       map.remove();
+      tiles.dispose();
       mapRef.current = null;
       renderersRef.current = null;
     };
@@ -303,111 +352,6 @@ export default function InteractiveMap({
 
     tileLayersRef.current.get(activeBasemap)?.addTo(map);
   }, [activeBasemap, sentinelYear]);
-
-  // -------------------------------------------------------------
-  // ACTIVE TIER - casing + styled, interactive boundaries
-  // -------------------------------------------------------------
-  useEffect(() => {
-    const map = mapRef.current;
-    const renderers = renderersRef.current;
-    if (!map || !renderers || !isMapReady) return;
-
-    boundaryLayerRef.current?.remove();
-    boundaryCasingRef.current?.remove();
-    boundaryLayerRef.current = null;
-    boundaryCasingRef.current = null;
-
-    if (!boundaryGeoJson?.features?.length) return;
-
-    const level = levelOfProperties(boundaryGeoJson.features[0].properties);
-    const zoom = map.getZoom();
-    const baseStyle = strokeFor(level, zoom);
-    const hoverStyle: L.PathOptions = {
-      color: HIGHLIGHT_COLOR,
-      weight: Math.max(2, (baseStyle.weight ?? 1) + 1),
-      opacity: 1,
-      dashArray: undefined,
-      fillColor: HIGHLIGHT_COLOR,
-      fillOpacity: level.highlightFill
-    };
-
-    boundaryCasingRef.current = L.geoJSON(boundaryGeoJson, {
-      style: () => casingFor(level, zoom),
-      interactive: false,
-      renderer: renderers.active
-    } as L.GeoJSONOptions).addTo(map);
-
-    const onEachFeature = (feature: GeoJSON.Feature, layer: L.Layer) => {
-      layer.on({
-        mouseover: (e) => {
-          (e.target as L.Path).setStyle(hoverStyle);
-          (e.target as L.Path).bringToFront();
-        },
-        mouseout: (e) => {
-          boundaryLayerRef.current?.resetStyle(e.target);
-        },
-        click: (e: L.LeafletMouseEvent) => {
-          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
-          onSelectFeatureRef.current(
-            feature.properties ?? {},
-            { lat: e.latlng.lat, lng: e.latlng.lng },
-            feature.geometry as BoundaryGeometry
-          );
-        }
-      });
-
-      // Lazy tooltip - built only when it opens, not for every feature up front
-      layer.bindTooltip(
-        () => {
-          const props = feature.properties ?? {};
-          const name = props[level.key];
-          const parentKey = ADMIN_LEVELS[ADMIN_LEVELS.indexOf(level) - 1]?.key;
-          const parent = parentKey ? props[parentKey] : 'Rwanda';
-          return `<div class="font-sans text-left"><div class="text-[12px] font-semibold text-fg">${name}</div><div class="text-[11px] text-fg-secondary">${level.label} · ${parent}</div></div>`;
-        },
-        { sticky: true, className: 'leaflet-tooltip' }
-      );
-    };
-
-    boundaryLayerRef.current = L.geoJSON(boundaryGeoJson, {
-      style: () => baseStyle,
-      onEachFeature,
-      renderer: renderers.active
-    } as L.GeoJSONOptions).addTo(map);
-  }, [boundaryGeoJson, isMapReady]);
-
-  // -------------------------------------------------------------
-  // PARENT TIER - non-interactive context outlines
-  // -------------------------------------------------------------
-  useEffect(() => {
-    const map = mapRef.current;
-    const renderers = renderersRef.current;
-    if (!map || !renderers || !isMapReady) return;
-
-    parentLayerRef.current?.remove();
-    parentCasingRef.current?.remove();
-    parentLayerRef.current = null;
-    parentCasingRef.current = null;
-
-    if (!parentBoundaryGeoJson?.features?.length) return;
-
-    const level = levelOfProperties(parentBoundaryGeoJson.features[0].properties);
-    const zoom = map.getZoom();
-    // Parent lines are drawn in their own tier style, slightly heavier than
-    // the active tier's so the hierarchy reads at a glance
-    const style = { ...strokeFor(level, zoom), fill: false };
-
-    parentCasingRef.current = L.geoJSON(parentBoundaryGeoJson, {
-      style: () => casingFor(level, zoom),
-      interactive: false,
-      renderer: renderers.parent
-    } as L.GeoJSONOptions).addTo(map);
-    parentLayerRef.current = L.geoJSON(parentBoundaryGeoJson, {
-      style: () => style,
-      interactive: false,
-      renderer: renderers.parent
-    } as L.GeoJSONOptions).addTo(map);
-  }, [parentBoundaryGeoJson, isMapReady]);
 
   // -------------------------------------------------------------
   // FOCUS MODE - dim everything outside the selection, glow its outline
@@ -478,8 +422,8 @@ export default function InteractiveMap({
   // EXPORT MAP TO PNG
   // -------------------------------------------------------------
   // Right-click -> "Save image as" only ever grabs ONE dom element under the
-  // cursor - a single tile <img> or one transparent boundary <canvas> - never
-  // both. This flattens every visible tile plus every vector canvas (in pane
+  // cursor - a single tile <img> or one transparent boundary layer - never
+  // both. This flattens every visible tile plus every vector layer (in pane
   // stacking order) into one offscreen canvas and downloads it as a PNG.
   //
   // mode: 'view' exports the full current viewport as seen (focus mask included).
@@ -488,6 +432,9 @@ export default function InteractiveMap({
   // flies in to the tightest zoom that fits the shape (capped at the basemap's
   // maxZoom) so the export isn't built from blurry zoomed-out tiles, waits for
   // those tiles, captures, then flies back.
+  // Resolves once the map has settled after a move and both the basemap and
+  // the boundary tiles (drawn asynchronously by the worker) are in, with a
+  // 6s fallback in case something never finishes
   const waitForMapIdle = (map: L.Map, tileLayer?: L.TileLayer): Promise<void> => {
     return new Promise((resolve) => {
       let settled = false;
@@ -496,23 +443,15 @@ export default function InteractiveMap({
         settled = true;
         resolve();
       };
-
-      const onMoveEnd = () => {
-        const loading = (tileLayer as (L.TileLayer & { isLoading?: () => boolean }) | undefined)?.isLoading?.();
-        if (tileLayer && loading) {
-          const onLoad = () => {
-            tileLayer.off('load', onLoad);
-            finish();
-          };
-          tileLayer.on('load', onLoad);
-          setTimeout(finish, 6000); // fallback in case a tile stalls/fails to ever fire 'load'
-        } else {
-          finish();
-        }
+      const poll = () => {
+        if (settled) return;
+        const busy = tileLayer?.isLoading() || boundaryTilesRef.current?.isBusy();
+        if (busy) setTimeout(poll, 50);
+        else finish();
       };
-
-      map.once('moveend', onMoveEnd);
-      setTimeout(finish, 6000); // fallback in case moveend itself never fires
+      // Leaflet only starts loading the new tiles on moveend
+      map.once('moveend', () => setTimeout(poll, 50));
+      setTimeout(finish, 6000);
     });
   };
 
@@ -556,6 +495,23 @@ export default function InteractiveMap({
     let offsetY = 0;
     let outW = containerRect.width;
     let outH = containerRect.height;
+    // The selection's exact polygon (holes included) in current screen-pixel
+    // space: clips a cutout export, and draws the focus mask/outline in both modes
+    const toScreenPath = (geom: BoundaryGeometry) => {
+      const path = new Path2D();
+      const addRing = (ring: GeoJSON.Position[]) => {
+        ring.forEach((coord, i) => {
+          const pt = map.latLngToContainerPoint([coord[1], coord[0]]);
+          if (i === 0) path.moveTo(pt.x, pt.y);
+          else path.lineTo(pt.x, pt.y);
+        });
+        path.closePath();
+      };
+      if (geom.type === 'Polygon') geom.coordinates.forEach(addRing);
+      else geom.coordinates.forEach((poly) => poly.forEach(addRing));
+      return path;
+    };
+    const focusPath = focusGeometry ? toScreenPath(focusGeometry) : null;
     let clipPath: Path2D | null = null;
 
     if (geometry && bounds) {
@@ -572,23 +528,7 @@ export default function InteractiveMap({
         finish();
         return;
       }
-
-      // Exact polygon (holes included) in current screen-pixel space
-      const path = new Path2D();
-      const addRing = (ring: GeoJSON.Position[]) => {
-        ring.forEach((coord, i) => {
-          const pt = map.latLngToContainerPoint([coord[1], coord[0]]);
-          if (i === 0) path.moveTo(pt.x, pt.y);
-          else path.lineTo(pt.x, pt.y);
-        });
-        path.closePath();
-      };
-      if (geometry.type === 'Polygon') {
-        geometry.coordinates.forEach(addRing);
-      } else {
-        geometry.coordinates.forEach((poly) => poly.forEach(addRing));
-      }
-      clipPath = path;
+      clipPath = focusPath;
     }
 
     try {
@@ -624,23 +564,46 @@ export default function InteractiveMap({
 
       if (clipPath) ctx.restore();
 
-      // 2. Vector canvases in pane stacking order. A cutout export skips the
-      // focus mask, which would otherwise paint the transparent surroundings dark.
-      const paneZ = (c: HTMLCanvasElement) => Number(c.closest<HTMLElement>('.leaflet-pane:not(.leaflet-map-pane)')?.style.zIndex || 400);
-      const overlayCanvases = (Array.from(container.querySelectorAll('canvas')) as HTMLCanvasElement[])
-        .filter((c) => !(clipPath && c.closest('.leaflet-focusMask-pane')))
-        .sort((a, b) => paneZ(a) - paneZ(b));
-      // Boundary lines are clipped to the shape too (only its own outline is
-      // drawn full-width), so the surroundings stay genuinely transparent.
-      for (const c of overlayCanvases) {
-        const r = c.getBoundingClientRect();
-        const clipThis = clipPath && !c.closest('.leaflet-focusOutline-pane');
-        if (clipThis) {
-          ctx.save();
-          ctx.clip(clipPath!, 'evenodd');
+      // 2. Boundary tiles (tiers + national border) on top - fresh bitmaps
+      // from the worker, placed where each tile canvas sits on screen
+      const snapshot = (await boundaryTilesRef.current?.snapshot()) ?? new Map<HTMLCanvasElement, ImageBitmap>();
+      for (const [el, bitmap] of snapshot) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) {
+          bitmap.close();
+          continue;
         }
-        ctx.drawImage(c, r.left - containerRect.left, r.top - containerRect.top, r.width, r.height);
-        if (clipThis) ctx.restore();
+        // In a cutout the lines are clipped to the shape too, so the
+        // surroundings stay genuinely transparent
+        if (clipPath) {
+          ctx.save();
+          ctx.clip(clipPath, 'evenodd');
+        }
+        ctx.drawImage(bitmap, r.left - containerRect.left, r.top - containerRect.top, r.width, r.height);
+        bitmap.close();
+        if (clipPath) ctx.restore();
+      }
+
+      // 3. Focus mask + selection outline, drawn straight from the selection
+      // geometry rather than rasterising the on-screen SVG overlays. The hover
+      // highlight is transient and never exported.
+      if (focusPath) {
+        if (!clipPath) {
+          const dim = new Path2D();
+          dim.rect(offsetX, offsetY, outW, outH);
+          dim.addPath(focusPath);
+          ctx.fillStyle = 'rgba(9, 13, 22, 0.55)';
+          ctx.fill(dim, 'evenodd');
+        }
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = CASING.color;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 6;
+        ctx.stroke(focusPath);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = HIGHLIGHT_COLOR;
+        ctx.lineWidth = 2.5;
+        ctx.stroke(focusPath);
       }
 
       canvas.toBlob((blob) => {

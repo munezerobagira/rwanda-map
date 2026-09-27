@@ -14,7 +14,15 @@ export interface BoundaryStroke {
   dashArray?: string;
 }
 
-export interface AdminLevel {
+/** What the tile renderer needs to fetch and draw a boundary set. */
+export interface TileTier {
+  id: string;
+  minZoom: number;
+  tileMaxZoom: number;
+  stroke: BoundaryStroke;
+}
+
+export interface AdminLevel extends TileTier {
   id: AdminLevelId;
   key: AdminLevelKey;
   label: string;
@@ -28,6 +36,24 @@ export interface AdminLevel {
   stroke: BoundaryStroke;
   /** Fill applied on hover / selection - the resting fill is always 0. */
   highlightFill: number;
+  /**
+   * Deepest server tile zoom this tier is fetched at. Past it, the client
+   * reuses the covering tile and redraws it at display resolution - big
+   * shapes don't need street-level tiles, so a district at z16 costs one
+   * request instead of dozens. Derived from the data: the zoom where one tile
+   * spans the tier's median feature, +1 so smaller-than-median features keep
+   * their detail. At each cap the tile simplification (a few metres) stays
+   * finer than the source data's own ~11-22m generalisation, so redrawing a
+   * capped tile deeper shows no loss.
+   *
+   *   tier       median extent   tile ~ median   tileMaxZoom
+   *   province   123 km          z8.3            9
+   *   district   45 km           z9.8            11
+   *   sector     11 km           z11.8           13
+   *   cell       4.7 km          z13.0           14
+   *   village    1.75 km         z14.5           16
+   */
+  tileMaxZoom: number;
 }
 
 // Strokes get lighter, thinner and more transparent as the tier gets finer, so
@@ -36,35 +62,45 @@ export interface AdminLevel {
 export const ADMIN_LEVELS: AdminLevel[] = [
   {
     id: 'provinces', key: 'province', label: 'Province', local: 'Intara',
-    zoom: 8.5, minZoom: 0, codeField: 'province_i',
+    zoom: 8.5, minZoom: 0, codeField: 'province_i', tileMaxZoom: 9,
     stroke: { color: '#F8FAFC', weight: 2.5, opacity: 0.85 },
     highlightFill: 0.08
   },
   {
     id: 'districts', key: 'district', label: 'District', local: 'Akarere',
-    zoom: 9.7, minZoom: 9.0, codeField: 'district_i',
+    zoom: 9.7, minZoom: 9.0, codeField: 'district_i', tileMaxZoom: 11,
     stroke: { color: '#94A3B8', weight: 1.8, opacity: 0.7 },
     highlightFill: 0.1
   },
   {
     id: 'sectors', key: 'sector', label: 'Sector', local: 'Umurenge',
-    zoom: 11.2, minZoom: 10.5, codeField: 'sector_id',
+    zoom: 11.2, minZoom: 10.5, codeField: 'sector_id', tileMaxZoom: 13,
     stroke: { color: '#38BDF8', weight: 1.2, opacity: 0.55, dashArray: '4 2' },
     highlightFill: 0.1
   },
   {
     id: 'cells', key: 'cell', label: 'Cell', local: 'Akagari',
-    zoom: 12.7, minZoom: 12.0, codeField: 'cell_id',
+    zoom: 12.7, minZoom: 12.0, codeField: 'cell_id', tileMaxZoom: 14,
     stroke: { color: '#818CF8', weight: 1.0, opacity: 0.5 },
     highlightFill: 0.15
   },
   {
     id: 'villages', key: 'village', label: 'Village', local: 'Umudugudu',
-    zoom: 14, minZoom: 13.5, codeField: 'village_id',
+    zoom: 14, minZoom: 13.5, codeField: 'village_id', tileMaxZoom: 16,
     stroke: { color: '#FCD34D', weight: 0.9, opacity: 0.55, dashArray: '2 2' },
     highlightFill: 0.25
   }
 ];
+
+// National border, drawn on top of every tier from its own tile layer
+export const COUNTRY_TIER: TileTier = {
+  id: 'country',
+  minZoom: 0,
+  // One ring for the whole country, so tiles stay tiny even deep in; capped
+  // where the source file's own detail runs out
+  tileMaxZoom: 14,
+  stroke: { color: '#F8FAFC', weight: 2, opacity: 0.75 }
+};
 
 // Dark outline drawn under every boundary line so it stays legible whether it
 // crosses pale soil, green canopy or dark roofs.

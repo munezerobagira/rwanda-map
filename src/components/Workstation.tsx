@@ -1,23 +1,19 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import dynamic from 'next/dynamic';
 import { AlertTriangle, X, PanelLeftOpen, Layers } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import SearchBar, { LocationSearchResult } from '@/components/SearchBar';
 import { LocationBar } from '@/components/OverlayCards';
 import InspectorPanel from '@/components/InspectorPanel';
 import TimelineScrubber from '@/components/TimelineScrubber';
-import type { ViewportInsets } from '@/components/InteractiveMap';
+// Static import: this whole module is already client-only (see page.tsx), and
+// a nested dynamic import only added another round trip before the map loads
+import InteractiveMap, { ViewportInsets } from '@/components/InteractiveMap';
 import { BASEMAPS, isBasemapAvailable } from '@/lib/basemaps';
-import { AdminLevelKey, levelById, levelForZoom, levelOfProperties, parentLevel } from '@/lib/adminLevels';
-import { BoundaryGeometry, Selection, displayName, hierarchyOf } from '@/lib/selection';
+import { AdminLevelKey, levelById, levelForZoom, levelOfProperties } from '@/lib/adminLevels';
+import { Selection, displayName, hierarchyOf } from '@/lib/selection';
 import { readUrlState, writeUrlState } from '@/lib/urlState';
-
-const InteractiveMap = dynamic(() => import('@/components/InteractiveMap'), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-surface-base" />
-});
 
 const DOCK_WIDTH = 340;
 const INSPECTOR_WIDTH = 360;
@@ -83,12 +79,11 @@ export default function Workstation() {
 
   const [isDockOpen, setIsDockOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
 
-  // Boundary data
-  const [boundaryGeoJson, setBoundaryGeoJson] = useState<any>(null);
-  const [parentBoundaryGeoJson, setParentBoundaryGeoJson] = useState<any>(null);
+  // Boundary tiles are fetched and drawn by the map itself; it reports back
+  // loading state and what's in view for the telemetry pill
   const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false);
   const [viewport, setViewport] = useState<Viewport | null>(null);
-  const [telemetry, setTelemetry] = useState<{ count: number; ms: number } | null>(null);
+  const [telemetry, setTelemetry] = useState<{ count: number; ms: number | null } | null>(null);
 
   // Selection
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -134,50 +129,6 @@ export default function Workstation() {
   }, [locationError]);
 
   // -------------------------------------------------------------
-  // Viewport-based boundary fetch: the tier for the current zoom plus its parent
-  // -------------------------------------------------------------
-  useEffect(() => {
-    if (!viewport) return;
-    const { minLng, minLat, maxLng, maxLat, zoom } = viewport;
-    const active = levelForZoom(zoom);
-    const parent = parentLevel(active);
-    const bbox = `minLng=${minLng}&minLat=${minLat}&maxLng=${maxLng}&maxLat=${maxLat}`;
-
-    const controller = new AbortController();
-
-    const fetchBoundaries = async () => {
-      setIsLoadingBoundaries(true);
-      try {
-        const [activeRes, parentRes] = await Promise.all([
-          fetch(`/api/boundaries?layer=${active.id}&${bbox}`, { signal: controller.signal }),
-          parent ? fetch(`/api/boundaries?layer=${parent.id}&${bbox}`, { signal: controller.signal }) : Promise.resolve(null)
-        ]);
-        const activeData = await activeRes.json();
-        const parentData = parentRes ? await parentRes.json() : null;
-        if (controller.signal.aborted) return;
-
-        if (activeData.layer === active.id) {
-          setBoundaryGeoJson(activeData);
-          setTelemetry({ count: activeData.featuresCount ?? 0, ms: activeData.queryTimeMs ?? 0 });
-        }
-        if (parentData === null) setParentBoundaryGeoJson(null);
-        else if (parentData.layer === parent?.id) setParentBoundaryGeoJson(parentData);
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('Failed to fetch boundaries', err);
-      } finally {
-        if (!controller.signal.aborted) setIsLoadingBoundaries(false);
-      }
-    };
-
-    // Debounced so a continuous pan/zoom gesture settles before refetching
-    const timer = setTimeout(fetchBoundaries, 350);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [viewport]);
-
-  // -------------------------------------------------------------
   // Selection resolution
   // -------------------------------------------------------------
   // Resolves the entity at a point - at a given tier, or the finest tier that
@@ -218,18 +169,13 @@ export default function Workstation() {
       });
   }, [initialUrl]);
 
-  const handleSelectFeature = useCallback(
-    (props: Record<string, any>, latlng: { lat: number; lng: number }, geometry: BoundaryGeometry) => {
-      selectRequestRef.current++; // supersede any in-flight resolution
-      setIsResolving(false);
-      setSelection({ kind: 'feature', level: levelOfProperties(props), props, point: latlng, geometry });
+  // A click selects the feature of whichever tier is active at that zoom
+  const handleMapClick = useCallback(
+    (lat: number, lng: number, zoom: number) => {
+      selectAt(lat, lng, levelForZoom(zoom).key);
     },
-    []
+    [selectAt]
   );
-
-  const handleMapClick = useCallback((lat: number, lng: number) => {
-    selectAt(lat, lng);
-  }, [selectAt]);
 
   const handleSelectSearchResult = (result: LocationSearchResult) => {
     setLocationError(null);
@@ -342,11 +288,10 @@ export default function Workstation() {
       <div className="absolute inset-0">
         <InteractiveMap
           initialView={initialUrl.center}
-          onSelectFeature={handleSelectFeature}
           onMapClick={handleMapClick}
+          onBoundaryLoading={setIsLoadingBoundaries}
+          onBoundaryStats={setTelemetry}
           onViewportChange={setViewport}
-          boundaryGeoJson={boundaryGeoJson}
-          parentBoundaryGeoJson={parentBoundaryGeoJson}
           activeBasemap={activeBasemap}
           sentinelYear={sentinelYear}
           flyTo={flyToTarget}
@@ -373,7 +318,8 @@ export default function Workstation() {
           >
             <PanelLeftOpen className={`w-4 h-4 transition-transform ${isDockOpen ? 'rotate-180' : ''}`} />
           </button>
-          <div className="w-7 h-7 rounded-md bg-brand flex items-center justify-center font-bold text-white text-[11px]">RM</div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny static SVG, nothing to optimize */}
+          <img src="/brand/logo-mark.svg" alt="" width={28} height={28} className="w-7 h-7 shrink-0" />
           <div className="hidden lg:block leading-tight">
             <h1 className="text-[14px] font-semibold tracking-[-0.01em] text-fg">Rwanda Map</h1>
             <p className="text-[11px] text-fg-secondary">GIS Workstation</p>
@@ -387,7 +333,7 @@ export default function Workstation() {
         {/* Live telemetry: what's actually rendered, not a decorative clock */}
         <div
           className="hidden sm:flex items-center gap-2 shrink-0 h-8 px-3 rounded-lg bg-surface-elevated/60 border border-line text-[12px]"
-          title="Active layer · features in view · zoom · server query time"
+          title="Active layer · features in view · zoom · tile fetch time"
         >
           <Layers className="w-3.5 h-3.5 shrink-0" style={{ color: activeLevel.stroke.color }} />
           <span className="font-medium text-fg">{activeLevel.label}s</span>
@@ -395,7 +341,11 @@ export default function Workstation() {
             <span className="hidden md:inline font-mono tabular text-fg-secondary">{telemetry.count.toLocaleString()} in view</span>
           )}
           <span className="hidden xl:inline font-mono tabular text-fg-muted">z{currentZoom.toFixed(1)}</span>
-          {telemetry && <span className="hidden xl:inline font-mono tabular text-fg-muted">{telemetry.ms} ms</span>}
+          {telemetry?.ms != null && (
+            <span className="hidden xl:inline font-mono tabular text-fg-muted" title="Mean tile fetch time">
+              {Math.round(telemetry.ms)} ms
+            </span>
+          )}
         </div>
       </header>
 

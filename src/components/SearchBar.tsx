@@ -94,7 +94,7 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
-    }, 200);
+    }, 120); // server search takes ~10ms, so the debounce is most of the wait
 
     return () => {
       clearTimeout(timer);

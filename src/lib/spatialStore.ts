@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import GeoJSONVT from 'geojson-vt';
 
 export interface BoundaryFeature {
   type: 'Feature';
@@ -25,6 +26,8 @@ export interface BoundaryFeature {
 }
 
 const LAYER_FILES: Record<string, string> = {
+  // National outline - only served as tiles (drawn over every tier)
+  country: 'country boundary.geojson',
   provinces: 'Province_Boundary_4676559859435530581.geojson',
   districts: 'district_boundary_-3032280129748906159.geojson',
   sectors: 'sector_boundary_-5923869450411707723.geojson',
@@ -33,6 +36,7 @@ const LAYER_FILES: Record<string, string> = {
 };
 
 const SIMPLIFIED_FILES: Record<string, string> = {
+  country: 'country boundary.geojson', // small enough to use as-is
   provinces: 'provinces.simplified.geojson',
   districts: 'districts.simplified.geojson',
   sectors: 'sectors.simplified.geojson',
@@ -40,7 +44,17 @@ const SIMPLIFIED_FILES: Record<string, string> = {
   villages: 'villages.simplified.geojson'
 };
 
+const TILE_PARENT_FIELD: Record<string, string | null> = {
+  country: null,
+  provinces: null,
+  districts: 'province',
+  sectors: 'district',
+  cells: 'sector',
+  villages: 'cell'
+};
+
 const SIMPLIFICATION_TOLERANCES: Record<string, number> = {
+  country: 0.0001,
   provinces: 0.001,   // ~110m resolution
   districts: 0.0005,  // ~55m resolution
   sectors: 0.0002,    // ~22m resolution
@@ -198,6 +212,7 @@ function calculateFeatureAreaKm2(geometry: any): number {
 
 class SpatialStore {
   private layers: Record<string, BoundaryFeature[]> = {
+    country: [],
     provinces: [],
     districts: [],
     sectors: [],
@@ -206,6 +221,7 @@ class SpatialStore {
   };
 
   private loadedLayers: Record<string, boolean> = {
+    country: false,
     provinces: false,
     districts: false,
     sectors: false,
@@ -213,7 +229,56 @@ class SpatialStore {
     villages: false
   };
 
+  // One vector-tile index per layer, built on first tile request
+  private tileIndexes: Record<string, Promise<GeoJSONVT>> = {};
+
   constructor() {}
+
+  // Tiles only carry what the map draws and labels: a stable id, the
+  // feature's own name and its parent's name. Everything else (codes, area,
+  // grid metrics) is fetched per feature on selection via /api/feature.
+  public getTileIndex(layerName: string): Promise<GeoJSONVT> {
+    if (!this.tileIndexes[layerName]) {
+      this.tileIndexes[layerName] = (async () => {
+        await this.loadLayerIfNeeded(layerName);
+        const nameField = layerName.slice(0, -1);
+        const parentField = TILE_PARENT_FIELD[layerName];
+        const startTime = Date.now();
+        const index = new GeoJSONVT(
+          {
+            type: 'FeatureCollection',
+            features: this.layers[layerName].map((f) => ({
+              type: 'Feature',
+              id: f.properties.FID,
+              properties: {
+                n: f.properties[nameField],
+                ...(parentField ? { p: f.properties[parentField] } : {})
+              },
+              geometry: f.geometry
+            }))
+          } as GeoJSON.FeatureCollection,
+          {
+            maxZoom: 18, // detail kept all the way to the map's max zoom
+            indexMaxZoom: 7, // pre-slice the coarse pyramid; deeper tiles are cut on demand
+            extent: 4096,
+            // Clip edges land this far outside the tile - wider than the
+            // thickest stroke, so polygon strokes never show seams at tile borders
+            buffer: 128,
+            // 0.5px at the tile's own zoom: invisible, and ~30% lighter than
+            // 2 for fine tiers seen zoomed out (sectors at z10). Deeper tiles
+            // are unaffected - the source is already generalised to ~11-22m.
+            tolerance: 4
+          }
+        );
+        console.log(`SpatialStore: Built tile index for ${layerName} in ${(Date.now() - startTime) / 1000}s`);
+        return index;
+      })().catch((err) => {
+        delete this.tileIndexes[layerName];
+        throw err;
+      });
+    }
+    return this.tileIndexes[layerName];
+  }
 
   public async loadLayerIfNeeded(layerName: string) {
     if (!LAYER_FILES[layerName]) {
@@ -637,7 +702,19 @@ class SpatialStore {
   }
 }
 
-// Ensure the store is persistent across hot-reloads during local development
-const globalForSpatial = global as unknown as { spatialStore: SpatialStore };
-export const spatialStore = globalForSpatial.spatialStore || new SpatialStore();
-if (process.env.NODE_ENV !== 'production') globalForSpatial.spatialStore = spatialStore;
+// One store per server process: shared across hot-reloads in development, and
+// between instrumentation.ts (which warms it at startup) and the route
+// handlers in production, which may be separate module instances
+const globalForSpatial = global as unknown as { spatialStore?: SpatialStore };
+export const spatialStore = (globalForSpatial.spatialStore ??= new SpatialStore());
+
+// Loads every layer and builds its tile index ahead of the first request, so
+// no visitor pays the multi-second parse (villages alone: ~1.5s). Coarse tiers
+// first - they're what the first screen shows.
+export async function warmSpatialStore() {
+  const start = Date.now();
+  for (const layer of ['country', 'provinces', 'districts', 'sectors', 'cells', 'villages']) {
+    await spatialStore.getTileIndex(layer);
+  }
+  console.log(`SpatialStore: warmed all layers in ${(Date.now() - start) / 1000}s`);
+}

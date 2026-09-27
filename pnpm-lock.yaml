@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      geojson-vt:
+        specifier: ^5.0.2
+        version: 5.0.2
       html2canvas:
         specifier: ^1.4.1
         version: 1.4.1
@@ -1205,6 +1208,9 @@ packages:
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
+
+  geojson-vt@5.0.2:
+    resolution: {integrity: sha512-X0IlqCZV+FMJ9/YGmGHXK6OP20xIEHSJxcXKEffe5XOLsXyxrdLbZjs5qFGWWXG4x68f2aWoLOHQ9BhxU3VX0w==}
 
   get-intrinsic@1.3.0:
     resolution: {integrity: sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==}
@@ -3281,6 +3287,10 @@ snapshots:
   generator-function@2.0.1: {}
 
   gensync@1.0.0-beta.2: {}
+
+  geojson-vt@5.0.2:
+    dependencies:
+      '@types/geojson': 7946.0.16
 
   get-intrinsic@1.3.0:
     dependencies:
