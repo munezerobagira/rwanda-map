@@ -12,10 +12,10 @@ export async function GET(req: NextRequest) {
 
     const results = await spatialStore.searchByName(q, 12);
     return NextResponse.json({ results });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('API Error in /api/search-location:', err);
     return NextResponse.json(
-      { error: 'Internal Server Error', details: err.message },
+      { error: 'Internal Server Error', details: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500 }
     );
   }

@@ -1,5 +1,7 @@
 'use client';
 
+import { useI18n } from '@/lib/i18n';
+
 import React from 'react';
 import { ChevronRight, Crosshair, Loader2 } from 'lucide-react';
 import { ADMIN_LEVELS, AdminLevelKey } from '@/lib/adminLevels';
@@ -28,6 +30,7 @@ export function LocationBar({
   onNavigate,
   currentZoom
 }: LocationBarProps) {
+  const { t } = useI18n();
   const crumbs = hierarchy
     ? ADMIN_LEVELS.filter((l) => hierarchy[l.key]).map((l) => ({ key: l.key, label: l.label, name: hierarchy[l.key]! }))
     : [];
@@ -37,8 +40,8 @@ export function LocationBar({
       <button
         onClick={onDetectLocation}
         disabled={isDetectingLocation}
-        title="Detect my location"
-        aria-label="Detect my location"
+        title={t('Detect my location')}
+        aria-label={t('Detect my location')}
         className="shrink-0 flex items-center justify-center w-8 h-8 rounded-md text-accent hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {isDetectingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
@@ -81,7 +84,7 @@ export function LocationBar({
             <li className="flex items-center gap-0.5">
               <ChevronRight className="w-3.5 h-3.5 text-fg-muted shrink-0" aria-hidden="true" />
               <span className="px-1.5 text-fg-muted">
-                {isOutside ? 'Point lies outside mapped boundaries' : 'Click the map or search to select a place'}
+                {isOutside ? t('Point lies outside mapped boundaries') : t('Click the map or search to select a place')}
               </span>
             </li>
           )}

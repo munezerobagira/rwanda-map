@@ -1,5 +1,7 @@
 'use client';
 
+import { useI18n } from '@/lib/i18n';
+
 import React from 'react';
 import { ADMIN_LEVELS, AdminLevel } from '@/lib/adminLevels';
 
@@ -14,7 +16,16 @@ function StrokeSample({ level }: { level: AdminLevel }) {
   const { color, weight, opacity, dashArray } = level.stroke;
   return (
     <svg width="28" height="10" viewBox="0 0 28 10" aria-hidden="true" className="shrink-0">
-      <line x1="1" y1="5" x2="27" y2="5" stroke="#000" strokeOpacity={0.55} strokeWidth={weight + 1.5} strokeLinecap="round" />
+      <line
+        x1="1"
+        y1="5"
+        x2="27"
+        y2="5"
+        stroke="#000"
+        strokeOpacity={0.55}
+        strokeWidth={weight + 1.5}
+        strokeLinecap="round"
+      />
       <line
         x1="1"
         y1="5"
@@ -34,6 +45,7 @@ function StrokeSample({ level }: { level: AdminLevel }) {
 // the zoom where that tier becomes the active, clickable layer. The tier
 // shown at the current zoom is marked, with the tier above it drawn as context.
 export default function LayerLegend({ activeLayerId, onSelectLevel }: LayerLegendProps) {
+  const { t } = useI18n();
   const activeIdx = ADMIN_LEVELS.findIndex((l) => l.id === activeLayerId);
 
   return (
@@ -46,7 +58,7 @@ export default function LayerLegend({ activeLayerId, onSelectLevel }: LayerLegen
             <button
               onClick={() => onSelectLevel(level.zoom)}
               aria-current={isActive ? 'true' : undefined}
-              title={`Zoom to ${level.label} level`}
+              title={`Zoom to ${t(level.label)} level`}
               className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors ${
                 isActive ? 'bg-accent/10 ring-1 ring-accent/40' : 'hover:bg-surface-subtle/60'
               }`}
@@ -54,15 +66,17 @@ export default function LayerLegend({ activeLayerId, onSelectLevel }: LayerLegen
             >
               <StrokeSample level={level} />
               <span className="min-w-0 flex-1">
-                <span className={`block text-[13px] font-semibold tracking-[-0.01em] ${isActive ? 'text-fg' : 'text-fg-secondary'}`}>
-                  {level.label}
+                <span
+                  className={`block text-[13px] font-semibold tracking-[-0.01em] ${isActive ? 'text-fg' : 'text-fg-secondary'}`}
+                >
+                  {t(level.label)}
                 </span>
                 <span className="block text-[11px] text-fg-muted">{level.local}</span>
               </span>
               {isActive ? (
-                <span className="eyebrow !text-accent">Active</span>
+                <span className="eyebrow !text-accent">{t('Active')}</span>
               ) : isContext ? (
-                <span className="eyebrow">Context</span>
+                <span className="eyebrow">{t('Context')}</span>
               ) : (
                 <span className="text-[11px] font-mono tabular text-fg-muted">z{level.minZoom || 8}</span>
               )}

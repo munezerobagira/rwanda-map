@@ -1,0 +1,62 @@
+[
+  {
+    "id": "earthsearch-kigali",
+    "url": "https://earth-search.aws.element84.com/v1/search?collections=sentinel-2-l2a&bbox=30.04%2C-1.96%2C30.08%2C-1.92&datetime=2026-09-01T00%3A00%3A00Z%2F2026-11-14T23%3A59%3A59Z&limit=5",
+    "status": 200,
+    "seconds": 0.46,
+    "bytes": 105131,
+    "type": "application/geo+json; charset=utf-8",
+    "cors": "*"
+  },
+  {
+    "id": "earthsearch-rural",
+    "url": "https://earth-search.aws.element84.com/v1/search?collections=sentinel-2-l2a&bbox=29.55%2C-2.10%2C29.59%2C-2.06&datetime=2026-09-01T00%3A00%3A00Z%2F2026-11-14T23%3A59%3A59Z&limit=5",
+    "status": 200,
+    "seconds": 0.49,
+    "bytes": 105166,
+    "type": "application/geo+json; charset=utf-8",
+    "cors": "*"
+  },
+  {
+    "id": "earthsearch-c1",
+    "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-c1-l2a",
+    "status": 200,
+    "seconds": 0.28,
+    "bytes": 12048,
+    "type": "application/json; charset=utf-8",
+    "cors": "*"
+  },
+  {
+    "id": "oam-rwanda",
+    "url": "https://api.openaerialmap.org/meta?bbox=28.86,-2.84,30.90,-1.05&limit=10",
+    "status": 200,
+    "seconds": 0.17,
+    "bytes": 22191,
+    "type": "application/json; charset=utf-8",
+    "cors": "https://map.openaerialmap.org"
+  },
+  {
+    "id": "eox2016",
+    "url": "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/11/1035/1195.jpg",
+    "status": 200,
+    "seconds": 0.89,
+    "bytes": 14924,
+    "type": "image/jpeg",
+    "cors": "*"
+  },
+  {
+    "id": "copernicus-mosaic",
+    "url": "https://s2gm.land.copernicus.eu/",
+    "seconds": 0.24,
+    "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1081)>"
+  },
+  {
+    "id": "osmtile",
+    "url": "https://tile.openstreetmap.org/11/1195/1035.png",
+    "status": 200,
+    "seconds": 0.08,
+    "bytes": 23496,
+    "type": "image/png",
+    "cors": "*"
+  }
+]

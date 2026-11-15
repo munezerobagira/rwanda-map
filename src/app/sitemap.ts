@@ -1,6 +1,6 @@
-import type { MetadataRoute } from "next";
+import type { MetadataRoute } from 'next';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://rwanda-map.vercel.app';
 
 // Single-page dashboard today - extend this array if/when more routes exist.
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -8,8 +8,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url: siteUrl,
       lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 1,
-    },
+      changeFrequency: 'weekly',
+      priority: 1
+    }
   ];
 }

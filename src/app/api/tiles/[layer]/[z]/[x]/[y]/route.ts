@@ -35,8 +35,8 @@ export async function GET(
     }));
 
     return compressedJson(req, { features }, { 'Cache-Control': 'public, max-age=86400, s-maxage=86400' });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('API Error in /api/tiles:', err);
-    return NextResponse.json({ error: 'Internal Server Error', details: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error', details: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
 }

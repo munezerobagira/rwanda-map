@@ -44,10 +44,10 @@ export async function GET(req: NextRequest) {
       },
       { 'Cache-Control': 'public, max-age=60, s-maxage=60' }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`API Error in /api/boundaries:`, err);
     return NextResponse.json(
-      { error: 'Internal Server Error', details: err.message },
+      { error: 'Internal Server Error', details: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500 }
     );
   }

@@ -1,5 +1,5 @@
 import zlib from 'zlib';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 // Next's own response compression doesn't reliably kick in for large Route
 // Handler JSON bodies - verified empirically: a `next start` production
@@ -43,12 +43,13 @@ export function encodedResponse({ body, encoding }: EncodedJson, extraHeaders: R
   return new NextResponse(new Uint8Array(body), {
     headers: {
       'Content-Type': 'application/json',
+      Vary: 'Accept-Encoding',
       ...(encoding ? { 'Content-Encoding': encoding } : {}),
       ...extraHeaders
     }
   });
 }
 
-export function compressedJson(req: NextRequest, payload: unknown, extraHeaders: Record<string, string> = {}) {
+export function compressedJson(req: Request, payload: unknown, extraHeaders: Record<string, string> = {}) {
   return encodedResponse(encodeJson(req.headers.get('accept-encoding') || '', payload), extraHeaders);
 }

@@ -1,0 +1,198 @@
+[
+  {
+    "id": "61fa32e9b0d4dd00072e06a3",
+    "title": "Buzeyi Kisoro District",
+    "gsd": 0.0252414707381,
+    "license": "CC-BY 4.0",
+    "acquiredAt": "2022-01-24T21:00:00.000Z",
+    "rwandaIntersection": false,
+    "bbox": [
+      29.66137,
+      -1.354399,
+      29.665852,
+      -1.3492
+    ]
+  },
+  {
+    "id": "6579606bc255cb000117ce3f",
+    "title": "IDP site Bunja",
+    "gsd": 0.026137938315593717,
+    "license": "CC-BY 4.0",
+    "acquiredAt": "2023-10-09T09:00:00.000Z",
+    "rwandaIntersection": false,
+    "bbox": [
+      29.212275,
+      -1.616686,
+      29.217801,
+      -1.610957
+    ]
+  },
+  {
+    "id": "65758041e8628500014ae5df",
+    "title": "shelter",
+    "gsd": 0.25637890762981486,
+    "license": "CC-BY 4.0",
+    "acquiredAt": "2023-10-28T22:00:00.000Z",
+    "rwandaIntersection": false,
+    "bbox": [
+      29.158196,
+      -1.604349,
+      29.177084,
+      -1.594909
+    ]
+  },
+  {
+    "id": "60ebfe8538de2500058775e9",
+    "title": "Maxar 1040010062AC8500",
+    "gsd": 0.334125701596,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2020-10-05T22:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.130529,
+      -1.793367,
+      29.256186,
+      -1.612261
+    ]
+  },
+  {
+    "id": "60af54f5a9600f000845811d",
+    "title": "Maxar 105001002475C500",
+    "gsd": 0.436760726526,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-22T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.292915,
+      -1.776741,
+      29.43785,
+      -1.387496
+    ]
+  },
+  {
+    "id": "60af5e14a9600f0008458124",
+    "title": "Maxar 1050010024853F00",
+    "gsd": 0.486788017671,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-25T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.132883,
+      -1.746934,
+      29.305837,
+      -1.431983
+    ]
+  },
+  {
+    "id": "60eab65c7a5faa0007aa7415",
+    "title": "Maxar 10300100BB48A300",
+    "gsd": 0.506848878181,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-03-10T23:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.24636,
+      -2.858459,
+      29.417265,
+      -1.479261
+    ]
+  },
+  {
+    "id": "60af59faa9600f0008458120",
+    "title": "Maxar 105001002475C600",
+    "gsd": 0.506932118266,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-22T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.154781,
+      -1.792344,
+      29.316515,
+      -1.369041
+    ]
+  },
+  {
+    "id": "60eaa1fb7a5faa0007aa7411",
+    "title": "Maxar 10300100BBC8B100",
+    "gsd": 0.508846640224,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-03-10T23:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.109725,
+      -2.852116,
+      29.277647,
+      -1.474109
+    ]
+  },
+  {
+    "id": "60af622ca9600f0008458127",
+    "title": "Maxar 1050010024854000",
+    "gsd": 0.529406941243,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-25T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.280462,
+      -1.765635,
+      29.467572,
+      -1.417039
+    ]
+  },
+  {
+    "id": "60eab80e7a5faa0007aa7418",
+    "title": "Maxar 10300100AC506900",
+    "gsd": 0.580349873325,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2020-10-14T22:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.130599,
+      -1.739185,
+      29.326497,
+      -1.585949
+    ]
+  },
+  {
+    "id": "60af5090a9600f000845811a",
+    "title": "Maxar 10300100BF94B700",
+    "gsd": 0.584844837921,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-20T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.172175,
+      -1.807089,
+      29.35257,
+      -1.36012
+    ]
+  },
+  {
+    "id": "60af786ca9600f000845812c",
+    "title": "Maxar 10200100B153F400",
+    "gsd": 0.88867114854,
+    "license": "CC BY-NC 4.0",
+    "acquiredAt": "2021-05-24T10:00:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.294569,
+      -2.471307,
+      29.57341,
+      -1.370088
+    ]
+  },
+  {
+    "id": "60ae193ea9600f0008458108",
+    "title": "Sentinel-1 AWS-IW-VVVH 2021-05-21 Goma",
+    "gsd": 14.6765359638,
+    "license": "CC-BY 4.0",
+    "acquiredAt": "2021-05-25T14:21:00.000Z",
+    "rwandaIntersection": true,
+    "bbox": [
+      29.071198,
+      -1.685123,
+      29.40079,
+      -1.524345
+    ]
+  }
+]

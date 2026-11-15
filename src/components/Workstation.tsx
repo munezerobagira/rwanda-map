@@ -1,4 +1,7 @@
 'use client';
+import { useEsriMetadata } from '@/lib/imagery/useEsriMetadata';
+
+import { useI18n, I18nProvider } from '@/lib/i18n';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, X, PanelLeftOpen, Layers } from 'lucide-react';
@@ -6,27 +9,38 @@ import Sidebar from '@/components/Sidebar';
 import SearchBar, { LocationSearchResult } from '@/components/SearchBar';
 import { LocationBar } from '@/components/OverlayCards';
 import InspectorPanel from '@/components/InspectorPanel';
+import ImageryDetails from '@/components/ImageryDetails';
+import RWANDA from '@/lib/regions/rwanda.json';
+import BuildingSourceControls from './BuildingSourceControls';
+import type { BuildingSource } from '@/lib/analysis/types';
+import { analysisDates, buildingDatesFor, snapshotPeriod } from '@/lib/analysis/timeControls';
+import { useAnalysis } from '@/lib/analysis/useAnalysis';
+import { FEATURE_FLAGS } from '@/lib/analysis/registry';
+import { useImagerySnapshot } from '@/lib/imagery/useSnapshot';
+import { latestCompleteMonth, sameSeasonLastYear } from '@/lib/imagery/periods';
+import type { Period } from '@/lib/imagery/catalog';
 import TimelineScrubber from '@/components/TimelineScrubber';
 // Static import: this whole module is already client-only (see page.tsx), and
 // a nested dynamic import only added another round trip before the map loads
-import InteractiveMap, { ViewportInsets } from '@/components/InteractiveMap';
+import InteractiveMap from '@/components/InteractiveMap';
+import { panelLayout } from '@/lib/panelLayout';
 import { BASEMAPS, isBasemapAvailable } from '@/lib/basemaps';
 import { AdminLevelKey, levelById, levelForZoom, levelOfProperties } from '@/lib/adminLevels';
-import { Selection, displayName, hierarchyOf } from '@/lib/selection';
+import { Selection, displayName, hierarchyOf, selectionArea, type DrawnShape } from '@/lib/selection';
+import { createAreaSelection, MAX_DRAW_VERTICES, type DrawingDraft } from '@/lib/drawnSelection';
+import { geometryBounds } from '@/lib/analysis/geometry';
 import { readUrlState, writeUrlState } from '@/lib/urlState';
 
-const DOCK_WIDTH = 340;
-const INSPECTOR_WIDTH = 360;
-const RWANDA_BOUNDS: [number, number, number, number] = [28.86, -2.84, 30.9, -1.05];
+const RWANDA_BOUNDS = RWANDA.bounds as [number, number, number, number];
 
-function useIsDesktop() {
+function useMediaQuery(query: string) {
   return useSyncExternalStore(
     (onChange) => {
-      const mq = window.matchMedia('(min-width: 768px)');
+      const mq = window.matchMedia(query);
       mq.addEventListener('change', onChange);
       return () => mq.removeEventListener('change', onChange);
     },
-    () => window.matchMedia('(min-width: 768px)').matches,
+    () => window.matchMedia(query).matches,
     () => true
   );
 }
@@ -73,11 +87,32 @@ async function resolveSelection(
 type FlyTarget = { lat: number; lng: number; zoom?: number; bounds?: [number, number, number, number]; nonce: number };
 
 export default function Workstation() {
+  return (
+    <I18nProvider>
+      <WorkstationContent />
+    </I18nProvider>
+  );
+}
+
+function WorkstationContent() {
+  const { t, language, setLanguage } = useI18n();
   // Rendered client-only (see page.tsx), so the URL can seed initial state directly
   const [initialUrl] = useState(readUrlState);
-  const isDesktop = useIsDesktop();
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const isWide = useMediaQuery('(min-width: 1200px)');
+  const bottomStackRef = useRef<HTMLDivElement>(null);
+  const [bottomStackHeight, setBottomStackHeight] = useState(0);
+  useEffect(() => {
+    const element = bottomStackRef.current;
+    if (!element) return;
+    const measure = () => setBottomStackHeight(Math.ceil(element.getBoundingClientRect().height));
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
-  const [isDockOpen, setIsDockOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
+  const [isDockOpen, setIsDockOpen] = useState(() => window.matchMedia(initialUrl.area ? '(min-width: 1200px)' : '(min-width: 768px)').matches);
 
   // Boundary tiles are fetched and drawn by the map itself; it reports back
   // loading state and what's in view for the telemetry pill
@@ -86,41 +121,62 @@ export default function Workstation() {
   const [telemetry, setTelemetry] = useState<{ count: number; ms: number | null } | null>(null);
 
   // Selection
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(() => initialUrl.area ?? null);
   const [isResolving, setIsResolving] = useState(() => Boolean(initialUrl.selection));
   const selectRequestRef = useRef(0);
+  const [drawing, setDrawing] = useState<DrawingDraft | null>(null);
 
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [flyToTarget, setFlyToTarget] = useState<FlyTarget | null>(null);
+  const [flyToTarget, setFlyToTarget] = useState<FlyTarget | null>(() =>
+    initialUrl.area && !initialUrl.center ? { ...initialUrl.area.point, bounds: geometryBounds(initialUrl.area.geometry), nonce: 0 } : null
+  );
   const [zoomOverride, setZoomOverride] = useState<{ zoom: number; nonce: number } | null>(null);
 
   // Basemap & imagery year
   const [activeBasemap, setActiveBasemap] = useState<string>(() => {
     const fromUrl = BASEMAPS.find((b) => b.id === initialUrl.basemap);
-    return fromUrl && isBasemapAvailable(fromUrl) ? fromUrl.id : 'esri';
+    return fromUrl && isBasemapAvailable(fromUrl) ? fromUrl.id : 'sentinel2';
   });
-  const [sentinelYear, setSentinelYear] = useState<string>(initialUrl.year ?? '2023');
-  const [availableYears, setAvailableYears] = useState<string[]>(['2018', '2019', '2020', '2021', '2022', '2023']);
+  const [period, setPeriod] = useState<Period>(() => {
+    if (initialUrl.period) return initialUrl.period;
+    const latest = latestCompleteMonth();
+    if (initialUrl.year && Number(initialUrl.year) >= 2019 && Number(initialUrl.year) < new Date().getUTCFullYear())
+      return { start: `${initialUrl.year}${latest.start.slice(4)}`, end: `${initialUrl.year}${latest.end.slice(4)}` };
+    return latest;
+  });
+  const [comparison, setComparison] = useState<Period>(
+    () => initialUrl.comparison ?? sameSeasonLastYear(initialUrl.period ?? latestCompleteMonth())
+  );
+  const [compare, setCompare] = useState(Boolean(initialUrl.compare));
+  const [swipe, setSwipe] = useState(50);
+  const sentinelYear = period.start.slice(0, 4);
   const activeBasemapDef = BASEMAPS.find((bm) => bm.id === activeBasemap);
-  const showTimeline = Boolean(activeBasemapDef?.supportsYear && availableYears.length > 0);
+  const [analysisEnabled, setAnalysisEnabled] = useState(initialUrl.analysis ?? true);
+  const [buildingSource, setBuildingSource] = useState<BuildingSource>(initialUrl.buildingSource ?? 'osm');
+  const [buildingsVisible, setBuildingsVisible] = useState(initialUrl.buildingsVisible ?? true);
+  const [analysisNonce, setAnalysisNonce] = useState(0);
+  const showImageryTimeline = Boolean(activeBasemapDef?.supportsPeriod);
+  const showTimeline = showImageryTimeline || analysisEnabled || Boolean(selection && selection.kind !== 'outside');
 
+  const esriMetadata = useEsriMetadata(selection?.point ?? null, activeBasemap === 'esri' && !drawing);
+
+  const snapshotA = useImagerySnapshot(period, showImageryTimeline);
+  const snapshotB = useImagerySnapshot(comparison, showImageryTimeline && compare);
+  const snapshots = useMemo(
+    () => (showImageryTimeline ? (compare ? [snapshotA, snapshotB] : [snapshotA]) : []),
+    [showImageryTimeline, compare, snapshotA, snapshotB]
+  );
+  const canAnalyze = Boolean(selection && selection.kind !== 'outside' && Number(selectionArea(selection)) <= RWANDA.analysisBudget.maxAreaKm2);
+  const analysis = useAnalysis(
+    canAnalyze && selection && selection.kind !== 'outside' ? selection.geometry : null,
+    analysisDates(period, comparison, compare),
+    analysisEnabled && FEATURE_FLAGS.buildingAnalysis,
+    analysisNonce,
+    buildingSource
+  );
   const currentZoom = viewport?.zoom ?? initialUrl.center?.zoom ?? 9.3;
   const activeLevel = levelForZoom(currentZoom);
-
-  useEffect(() => {
-    fetch('/api/satellite-capabilities')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.years?.length) return;
-        setAvailableYears(data.years);
-        // Keep a year from a shared link if it exists; otherwise show the newest
-        setSentinelYear(
-          initialUrl.year && data.years.includes(initialUrl.year) ? initialUrl.year : data.years[data.years.length - 1]
-        );
-      })
-      .catch((err) => console.error('Failed to load satellite capabilities', err));
-  }, [initialUrl.year]);
 
   useEffect(() => {
     if (!locationError) return;
@@ -131,34 +187,43 @@ export default function Workstation() {
   // -------------------------------------------------------------
   // Selection resolution
   // -------------------------------------------------------------
+  const applySelection = useCallback((next: Selection) => {
+    setSelection(next);
+    // Prioritize the selected map and inspector when two docks cannot fit.
+    // The user can still reopen layers explicitly after selecting an area.
+    if (!window.matchMedia('(min-width: 1200px)').matches) setIsDockOpen(false);
+  }, []);
+
   // Resolves the entity at a point - at a given tier, or the finest tier that
   // contains it - with its full geometry for the focus mask.
   const selectAt = useCallback(async (lat: number, lng: number, levelKey?: AdminLevelKey, fly = false) => {
+    setDrawing(null);
     // Later calls win over slower earlier ones
     const requestId = ++selectRequestRef.current;
     setIsResolving(true);
     try {
       const resolved = await resolveSelection(lat, lng, levelKey);
       if (requestId !== selectRequestRef.current) return;
-      setSelection(resolved.selection);
+      applySelection(resolved.selection);
       if (fly && resolved.bbox) setFlyToTarget({ lat, lng, bounds: resolved.bbox, nonce: Date.now() });
     } catch (err) {
       console.error('Failed to resolve selection', err);
     } finally {
       if (requestId === selectRequestRef.current) setIsResolving(false);
     }
-  }, []);
+  }, [applySelection]);
 
   // Restore a selection from a shared link. Only fly to it when the link
   // didn't also pin a map position.
   useEffect(() => {
+    if (initialUrl.area) return;
     const sel = initialUrl.selection;
     if (!sel) return;
     const requestId = ++selectRequestRef.current;
     resolveSelection(sel.lat, sel.lng, sel.level)
       .then((resolved) => {
         if (requestId !== selectRequestRef.current) return;
-        setSelection(resolved.selection);
+        applySelection(resolved.selection);
         if (!initialUrl.center && resolved.bbox) {
           setFlyToTarget({ lat: sel.lat, lng: sel.lng, bounds: resolved.bbox, nonce: Date.now() });
         }
@@ -167,14 +232,23 @@ export default function Workstation() {
       .finally(() => {
         if (requestId === selectRequestRef.current) setIsResolving(false);
       });
-  }, [initialUrl]);
+  }, [initialUrl, applySelection]);
 
   // A click selects the feature of whichever tier is active at that zoom
   const handleMapClick = useCallback(
     (lat: number, lng: number, zoom: number) => {
+      if (drawing) {
+        setDrawing((draft) => {
+          if (!draft) return draft;
+          const limit = draft.shape === 'rectangle' ? 2 : MAX_DRAW_VERTICES;
+          if (draft.points.length >= limit) return draft;
+          return { ...draft, points: [...draft.points, [lng, lat]], error: false };
+        });
+        return;
+      }
       selectAt(lat, lng, levelForZoom(zoom).key);
     },
-    [selectAt]
+    [selectAt, drawing]
   );
 
   const handleSelectSearchResult = (result: LocationSearchResult) => {
@@ -190,10 +264,16 @@ export default function Workstation() {
 
   const handleNavigate = (level: AdminLevelKey | 'country') => {
     if (level === 'country') {
+      setDrawing(null);
       selectRequestRef.current++;
       setSelection(null);
       const [minLng, minLat, maxLng, maxLat] = RWANDA_BOUNDS;
-      setFlyToTarget({ lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2, bounds: RWANDA_BOUNDS, nonce: Date.now() });
+      setFlyToTarget({
+        lat: (minLat + maxLat) / 2,
+        lng: (minLng + maxLng) / 2,
+        bounds: RWANDA_BOUNDS,
+        nonce: Date.now()
+      });
       return;
     }
     if (selection?.kind === 'feature') {
@@ -238,11 +318,16 @@ export default function Workstation() {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (e.key !== 'Escape' || target?.tagName === 'INPUT') return;
+      if (drawing) {
+        setDrawing(null);
+        e.preventDefault();
+        return;
+      }
       clearSelection();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [clearSelection]);
+  }, [clearSelection, drawing]);
 
   // -------------------------------------------------------------
   // Keep the address bar in sync so any view can be shared/bookmarked
@@ -252,35 +337,73 @@ export default function Workstation() {
       center: viewport ? { lat: viewport.centerLat, lng: viewport.centerLng, zoom: viewport.zoom } : initialUrl.center,
       basemap: activeBasemap,
       year: activeBasemapDef?.supportsYear ? sentinelYear : undefined,
+      period,
+      comparison,
+      compare,
+      language,
+      analysis: analysisEnabled,
+      buildingSource,
+      buildingsVisible,
+      area: selection?.kind === 'area' ? selection : undefined,
       selection:
         selection?.kind === 'feature'
           ? { lat: selection.point.lat, lng: selection.point.lng, level: selection.level.key }
           : undefined
     });
-  }, [viewport, activeBasemap, activeBasemapDef, sentinelYear, selection, initialUrl.center]);
+  }, [
+    viewport,
+    activeBasemap,
+    activeBasemapDef,
+    sentinelYear,
+    selection,
+    initialUrl.center,
+    period,
+    comparison,
+    compare,
+    language,
+    analysisEnabled,
+    buildingSource,
+    buildingsVisible
+  ]);
 
   // Screen reader announcement of the current selection
   const announcement = useMemo(() => {
     if (!selection) return '';
     if (selection.kind === 'outside') return 'Selected point is outside mapped boundaries.';
+    if (selection.kind === 'area') return `${displayName(selection)}: ${selection.areaKm2.toFixed(3)} km²`;
     const parents = Object.values(hierarchyOf(selection.props, selection.level)).slice(0, -1).reverse().join(', ');
-    const area = typeof selection.props.area_km2 === 'number' ? ` Area ${selection.props.area_km2} square kilometres.` : '';
+    const area =
+      typeof selection.props.area_km2 === 'number' ? ` Area ${selection.props.area_km2} square kilometres.` : '';
     return `${displayName(selection)} ${selection.level.label} selected${parents ? `, in ${parents}` : ''}.${area}`;
   }, [selection]);
 
-  const bottomBarHeight = 60;
-  const timelineHeight = showTimeline ? 76 : 0;
-  const insets: ViewportInsets = {
-    top: 64,
-    left: isDesktop && isDockOpen ? DOCK_WIDTH + 16 : 0,
-    // Reserved while a selection is still resolving too, so a fly-to that
-    // starts before the inspector opens already leaves room for it
-    right: isDesktop && (selection || isResolving) ? INSPECTOR_WIDTH + 16 : 0,
-    bottom: bottomBarHeight + timelineHeight
-  };
+  const { insets, panelBottom, stackLeft, stackRight } = panelLayout({
+    desktop: isDesktop,
+    wide: isWide,
+    dockOpen: isDockOpen,
+    hasInspector: !drawing && Boolean(selection || isResolving),
+    bottomStackHeight
+  });
 
   const toggleDock = () => setIsDockOpen((o) => !o);
-  const focusGeometry = selection?.kind === 'feature' ? selection.geometry : null;
+  const focusGeometry = !drawing && selection && selection.kind !== 'outside' ? selection.geometry : null;
+  const startDrawing = (shape: DrawnShape) => {
+    selectRequestRef.current++;
+    setIsResolving(false);
+    setDrawing({ shape, points: [] });
+    if (!isWide) setIsDockOpen(false);
+  };
+  const finishDrawing = () => {
+    if (!drawing) return;
+    try {
+      const next = createAreaSelection(drawing.shape, drawing.points);
+      selectRequestRef.current++;
+      applySelection(next);
+      setDrawing(null);
+    } catch {
+      setDrawing({ ...drawing, error: true });
+    }
+  };
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-surface-base text-fg">
@@ -288,12 +411,25 @@ export default function Workstation() {
       <div className="absolute inset-0">
         <InteractiveMap
           initialView={initialUrl.center}
+          drawing={drawing}
+          onStartDrawing={startDrawing}
+          onCancelDrawing={() => setDrawing(null)}
+          onUndoDrawing={() => setDrawing((draft) => draft ? { ...draft, points: draft.points.slice(0, -1), error: false } : null)}
+          onFinishDrawing={finishDrawing}
+          selectionNote={selection?.kind === 'area' ? `${t('User-drawn approximation · not a cadastral boundary.')} ${t('Selection created')}: ${selection.createdAt}` : undefined}
           onMapClick={handleMapClick}
           onBoundaryLoading={setIsLoadingBoundaries}
           onBoundaryStats={setTelemetry}
           onViewportChange={setViewport}
           activeBasemap={activeBasemap}
           sentinelYear={sentinelYear}
+          period={period}
+          comparison={comparison}
+          compare={compare && showImageryTimeline}
+          swipe={swipe}
+          snapshots={snapshots}
+          esriMetadata={esriMetadata}
+          analysis={drawing || !buildingsVisible ? null : analysis.result}
           flyTo={flyToTarget}
           zoomOverride={zoomOverride}
           focusGeometry={focusGeometry}
@@ -313,7 +449,7 @@ export default function Workstation() {
             onClick={toggleDock}
             aria-label={isDockOpen ? 'Collapse layers panel' : 'Open layers panel'}
             aria-expanded={isDockOpen}
-            title="Layers & tools"
+            title={t('Layers & tools')}
             className="p-1.5 text-fg-secondary hover:text-fg hover:bg-surface-subtle/60 rounded-md transition-colors"
           >
             <PanelLeftOpen className={`w-4 h-4 transition-transform ${isDockOpen ? 'rotate-180' : ''}`} />
@@ -322,10 +458,20 @@ export default function Workstation() {
           <img src="/brand/logo-mark.svg" alt="" width={28} height={28} className="w-7 h-7 shrink-0" />
           <div className="hidden lg:block leading-tight">
             <h1 className="text-[14px] font-semibold tracking-[-0.01em] text-fg">Rwanda Map</h1>
-            <p className="text-[11px] text-fg-secondary">GIS Workstation</p>
+            <p className="text-[11px] text-fg-secondary">{t('GIS Workstation')}</p>
           </div>
         </div>
 
+        <select
+          aria-label="Language / Ururimi / Langue"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as 'rw' | 'en' | 'fr')}
+          className="bg-surface-elevated text-fg text-[12px] rounded px-1 py-2"
+        >
+          <option value="rw">RW</option>
+          <option value="en">EN</option>
+          <option value="fr">FR</option>
+        </select>
         <div className="flex-1 min-w-0 flex justify-center">
           <SearchBar onSelectResult={handleSelectSearchResult} onSelectCoordinate={handleSelectCoordinate} />
         </div>
@@ -338,7 +484,9 @@ export default function Workstation() {
           <Layers className="w-3.5 h-3.5 shrink-0" style={{ color: activeLevel.stroke.color }} />
           <span className="font-medium text-fg">{activeLevel.label}s</span>
           {telemetry && (
-            <span className="hidden md:inline font-mono tabular text-fg-secondary">{telemetry.count.toLocaleString()} in view</span>
+            <span className="hidden md:inline font-mono tabular text-fg-secondary">
+              {telemetry.count.toLocaleString()} in view
+            </span>
           )}
           <span className="hidden xl:inline font-mono tabular text-fg-muted">z{currentZoom.toFixed(1)}</span>
           {telemetry?.ms != null && (
@@ -350,6 +498,15 @@ export default function Workstation() {
       </header>
 
       <Sidebar
+        bottomInset={panelBottom}
+        onAnalyze={() => {
+          setAnalysisEnabled(true);
+          setAnalysisNonce((n) => n + 1);
+        }}
+        canAnalyze={canAnalyze && !drawing}
+        analysisPending={analysis.pending}
+        analysisEnabled={analysisEnabled}
+        onToggleAnalysis={setAnalysisEnabled}
         activeBasemap={activeBasemap}
         setActiveBasemap={setActiveBasemap}
         sentinelYear={sentinelYear}
@@ -360,25 +517,58 @@ export default function Workstation() {
       />
 
       {/* Right inspector - only while something is selected */}
-      {selection && (
+      {selection && !drawing && (
         <aside
-          aria-label="Selection details"
-          className="glass-panel absolute z-[1150] right-4 top-[76px] w-[calc(100%-2rem)] max-w-[360px] max-h-[calc(100%-152px)] overflow-y-auto animate-fade-in"
+          aria-label={t('Selection details')}
+          style={{ maxHeight: `calc(100dvh - ${76 + panelBottom}px)` }}
+          className="glass-panel absolute z-[1150] right-4 top-[76px] w-[calc(100%-2rem)] max-w-[360px] overflow-y-auto animate-fade-in"
         >
-          <InspectorPanel selection={selection} onClose={clearSelection} />
+          <InspectorPanel
+            selection={selection}
+            analysisControls={<BuildingSourceControls source={buildingSource} onSource={(source) => {
+              setBuildingSource(source);
+              const dates = buildingDatesFor(source);
+              setPeriod(snapshotPeriod(dates.at(-1)!, source));
+              setComparison(snapshotPeriod(dates.at(-2) ?? dates[0], source));
+            }} visible={buildingsVisible} onVisible={setBuildingsVisible} />}
+            analysisEnabled={analysisEnabled}
+            canAnalyze={canAnalyze}
+            onToggleAnalysis={setAnalysisEnabled}
+            onClose={clearSelection}
+            snapshots={snapshots}
+            esriMetadata={esriMetadata}
+            analysis={analysis.result}
+            analysisPending={analysis.pending}
+            analysisError={analysis.error}
+          >
+            {showImageryTimeline && (
+              <ImageryDetails
+                snapshots={snapshots}
+                bbox={viewport ? [viewport.minLng, viewport.minLat, viewport.maxLng, viewport.maxLat] : undefined}
+              />
+            )}
+          </InspectorPanel>
         </aside>
       )}
 
       {/* Bottom stack: error toast, imagery timeline, breadcrumb bar */}
       <div
+        ref={bottomStackRef}
         className="absolute z-[1100] bottom-4 flex flex-col items-center gap-2 pointer-events-none transition-[left,right] duration-300"
-        style={{ left: 16 + insets.left, right: 16 + insets.right }}
+        style={{ left: stackLeft, right: stackRight }}
       >
         {locationError && (
-          <div role="alert" className="glass-panel flex items-center gap-2 px-4 py-2.5 pointer-events-auto !bg-[#2a1414]/95 !border-danger/30 text-[13px] text-red-200 max-w-md">
+          <div
+            role="alert"
+            className="glass-panel flex items-center gap-2 px-4 py-2.5 pointer-events-auto !bg-[#2a1414]/95 !border-danger/30 text-[13px] text-red-200 max-w-md"
+          >
             <AlertTriangle className="w-4 h-4 text-danger shrink-0" />
             <span>{locationError}</span>
-            <button onClick={() => setLocationError(null)} className="ml-2 text-red-300/70 hover:text-red-200 shrink-0" aria-label="Dismiss">
+            <button
+              onClick={() => setLocationError(null)}
+              className="ml-2 text-red-300/70 hover:text-red-200 shrink-0"
+              aria-label="Dismiss"
+            >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -386,10 +576,20 @@ export default function Workstation() {
         {showTimeline && (
           <div className="w-full max-w-[560px]">
             <TimelineScrubber
-              years={availableYears}
-              value={sentinelYear}
-              onChange={setSentinelYear}
-              label={activeBasemapDef?.name ?? 'Imagery'}
+              key={`${period.start}:${period.end}:${comparison.start}:${comparison.end}`}
+              buildingSource={buildingSource}
+              showImagery={showImageryTimeline}
+              snapshots={snapshots}
+              period={period}
+              comparison={comparison}
+              compare={compare}
+              swipe={swipe}
+              onApply={(a, b) => {
+                setPeriod(a);
+                setComparison(b);
+              }}
+              onCompare={setCompare}
+              onSwipe={setSwipe}
             />
           </div>
         )}

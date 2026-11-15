@@ -1,0 +1,15 @@
+OpenStreetMap-derived building representative-point database for Rwanda.
+Copyright OpenStreetMap contributors. Extracts provided by Geofabrik.
+
+Licensed under the Open Data Commons Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+https://www.openstreetmap.org/copyright
+
+The manifests record immutable source timestamps, source URLs and SHA-256 hashes.
+This is an adapted database, not a census, cadastral survey or ownership register.
+No contributor identities, owner names or addresses are retained.
+
+Source geometry positional accuracy, mapping completeness and residential use
+are unvalidated. Quantization is not a claim about accuracy. Building tag changes
+are not verified construction/demolition. Points are representative locations
+inside footprints, not footprint polygons or surveyed building positions.

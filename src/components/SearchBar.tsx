@@ -1,5 +1,7 @@
 'use client';
 
+import { useI18n } from '@/lib/i18n';
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Loader2, MapPin, Crosshair, CornerDownLeft } from 'lucide-react';
 import { ADMIN_LEVELS } from '@/lib/adminLevels';
@@ -46,6 +48,7 @@ function parseCoordinate(text: string): { lat: number; lng: number } | null {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 export default function SearchBar({ onSelectResult, onSelectCoordinate }: SearchBarProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<LocationSearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -89,8 +92,8 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
         });
         const data = await res.json();
         if (!controller.signal.aborted) setResults(data.results || []);
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error('Location search failed', err);
+      } catch (err: unknown) {
+        if (!(err instanceof Error && err.name === 'AbortError')) console.error('Location search failed', err);
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -106,7 +109,8 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      const typing =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
       if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing)) {
         e.preventDefault();
         inputRef.current?.focus();
@@ -176,12 +180,12 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
           aria-expanded={showDropdown}
           aria-controls="search-results"
           aria-activedescendant={showDropdown && optionCount ? optionId(activeIndex) : undefined}
-          aria-label="Search places or coordinates"
+          aria-label={t('Search places or coordinates')}
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
           onKeyDown={onInputKeyDown}
-          placeholder="Search a place, or paste lat, lng"
+          placeholder={t('Search a place, or paste lat, lng')}
           className="w-full bg-transparent border-none outline-none focus-visible:outline-none text-[13px] text-fg placeholder:text-fg-muted"
         />
         <kbd className="hidden md:inline-flex items-center gap-0.5 shrink-0 text-[11px] font-mono text-fg-muted border border-line rounded px-1.5 py-0.5">
@@ -206,7 +210,10 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
             >
               <Crosshair className="w-4 h-4 text-accent shrink-0" />
               <span className="text-[13px] text-fg">
-                Go to <span className="font-mono tabular">{coordinate.lat.toFixed(5)}, {coordinate.lng.toFixed(5)}</span>
+                Go to{' '}
+                <span className="font-mono tabular">
+                  {coordinate.lat.toFixed(5)}, {coordinate.lng.toFixed(5)}
+                </span>
               </span>
             </button>
           )}
@@ -214,7 +221,8 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
           {groups.map((group) => (
             <div key={group.level.id} role="group" aria-label={group.level.label}>
               <div className="px-3 pt-2.5 pb-1 eyebrow !text-[10px]">
-                {group.level.label}s <span className="text-fg-muted normal-case tracking-normal font-medium">· {group.level.local}</span>
+                {t(group.level.label)}{' '}
+                <span className="text-fg-muted normal-case tracking-normal font-medium">· {group.level.local}</span>
               </div>
               {group.items.map((result) => {
                 const i = runningIndex++;
@@ -244,7 +252,7 @@ export default function SearchBar({ onSelectResult, onSelectCoordinate }: Search
           ))}
 
           {!coordinate && !isLoading && flatResults.length === 0 && (
-            <div className="px-3 py-2.5 text-[13px] text-fg-secondary">No matching places.</div>
+            <div className="px-3 py-2.5 text-[13px] text-fg-secondary">{t('No matching places.')}</div>
           )}
         </div>
       )}

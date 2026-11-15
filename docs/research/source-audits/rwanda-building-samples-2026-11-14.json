@@ -1,0 +1,270 @@
+{
+  "accessed": "2026-11-14",
+  "purpose": "Cross-source mapping audit only; not ground truth or residential accuracy",
+  "pointMethod": "Centroid if within footprint, otherwise point-on-surface; quantized to 1e-6 degrees before selection",
+  "boundaryProvenance": "Existing reference boundaries; source/license/effective date unresolved",
+  "samples": [
+    {
+      "sample": "urban",
+      "name": "Ishema",
+      "cell": "Kiyovu",
+      "sector": "Nyarugenge",
+      "district": "Nyarugenge",
+      "bbox": [
+        30.059788,
+        -1.954346,
+        30.070413,
+        -1.943636
+      ],
+      "sources": [
+        {
+          "source": "Overture",
+          "release": "2026-09-23.1",
+          "queryFeatures": 1341,
+          "selected": 476,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "OpenStreetMap": 255,
+            "Google Open Buildings": 196,
+            "Microsoft ML Buildings": 25
+          },
+          "unknownSubtype": 434,
+          "sourceUpdateRange": [
+            "2011-03-31T17:53:42.000Z",
+            "2026-08-12T08:21:14.000Z"
+          ],
+          "downloadSha256": "a6be2b6956b290dc987a02c88d553d1f9d1a2ab480a2728b0c74f7bced572b99",
+          "geojsonOutputBytes": 790204
+        },
+        {
+          "source": "Overture",
+          "release": "2026-10-21.0",
+          "queryFeatures": 1341,
+          "selected": 476,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "OpenStreetMap": 255,
+            "Microsoft ML Buildings": 25,
+            "Google Open Buildings": 196
+          },
+          "unknownSubtype": 434,
+          "sourceUpdateRange": [
+            "2011-03-31T17:53:42.000Z",
+            "2026-08-12T08:21:14.000Z"
+          ],
+          "downloadSha256": "116015876c823f5943a16b3dd8ef68c379c586e0889b00f0b322ebaa5e2b15b5",
+          "geojsonOutputBytes": 790204
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2025-01-01-p2",
+          "mappingDate": "2025-01-01T21:21:00Z",
+          "processingVersion": 2,
+          "selected": 192,
+          "classCounts": {
+            "3": 30,
+            "0": 147,
+            "2": 4,
+            "1": 11
+          },
+          "sourceSha256": "cf06464cfbe150a70ee1da3dc8bc3dd04f9649b4f360b8a01cc555a37cdbd57f"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-01-01-p2",
+          "mappingDate": "2026-01-01T21:21:30Z",
+          "processingVersion": 2,
+          "selected": 193,
+          "classCounts": {
+            "3": 30,
+            "0": 148,
+            "2": 6,
+            "1": 9
+          },
+          "sourceSha256": "0e5daee1cf01b26dc6d3e3553cf5c2bf6c4501faf6ec968e25e442b10d5828b1"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-10-01-p2",
+          "mappingDate": "2026-10-01T20:22:06Z",
+          "processingVersion": 2,
+          "selected": 254,
+          "classCounts": {
+            "3": 25,
+            "0": 214,
+            "2": 6,
+            "1": 9
+          },
+          "sourceSha256": "6fd28e3d15fdf3a2ec4a98cdad458212cb106b942f157ae84368c6a560cccd06"
+        }
+      ]
+    },
+    {
+      "sample": "peri",
+      "name": "Nyakarambi",
+      "cell": "Gitaraga",
+      "sector": "Masaka",
+      "district": "Kicukiro",
+      "bbox": [
+        30.189739,
+        -2.012097,
+        30.210113,
+        -1.998231
+      ],
+      "sources": [
+        {
+          "source": "Overture",
+          "release": "2026-09-23.1",
+          "queryFeatures": 2808,
+          "selected": 669,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "Google Open Buildings": 317,
+            "Microsoft ML Buildings": 63,
+            "OpenStreetMap": 289
+          },
+          "unknownSubtype": 646,
+          "sourceUpdateRange": [
+            "2023-05-01T00:00:00.000Z",
+            "2025-07-30T09:43:23.000Z"
+          ],
+          "downloadSha256": "a67370a47c12f2414b7aa41d67828533a76644313976ad7d2485346c2b1431d5",
+          "geojsonOutputBytes": 1580788
+        },
+        {
+          "source": "Overture",
+          "release": "2026-10-21.0",
+          "queryFeatures": 2808,
+          "selected": 669,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "Google Open Buildings": 317,
+            "Microsoft ML Buildings": 63,
+            "OpenStreetMap": 289
+          },
+          "unknownSubtype": 646,
+          "sourceUpdateRange": [
+            "2023-05-01T00:00:00.000Z",
+            "2025-07-30T09:43:23.000Z"
+          ],
+          "downloadSha256": "41e6786d5bc2c13c16dcb09227282c022c83691c4f1fe5366a5617bc3815cfee",
+          "geojsonOutputBytes": 1580788
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2025-01-01-p2",
+          "mappingDate": "2025-01-01T21:21:00Z",
+          "processingVersion": 2,
+          "selected": 0,
+          "classCounts": {},
+          "sourceSha256": "cf06464cfbe150a70ee1da3dc8bc3dd04f9649b4f360b8a01cc555a37cdbd57f"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-01-01-p2",
+          "mappingDate": "2026-01-01T21:21:30Z",
+          "processingVersion": 2,
+          "selected": 289,
+          "classCounts": {
+            "2": 23,
+            "0": 266
+          },
+          "sourceSha256": "0e5daee1cf01b26dc6d3e3553cf5c2bf6c4501faf6ec968e25e442b10d5828b1"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-10-01-p2",
+          "mappingDate": "2026-10-01T20:22:06Z",
+          "processingVersion": 2,
+          "selected": 289,
+          "classCounts": {
+            "2": 23,
+            "0": 266
+          },
+          "sourceSha256": "6fd28e3d15fdf3a2ec4a98cdad458212cb106b942f157ae84368c6a560cccd06"
+        }
+      ]
+    },
+    {
+      "sample": "rural",
+      "name": "Nyakarekare",
+      "cell": "Mubuga",
+      "sector": "Kisaro",
+      "district": "Rulindo",
+      "bbox": [
+        30.023196,
+        -1.663634,
+        30.037015,
+        -1.648904
+      ],
+      "sources": [
+        {
+          "source": "Overture",
+          "release": "2026-09-23.1",
+          "queryFeatures": 779,
+          "selected": 390,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "Google Open Buildings": 368,
+            "Microsoft ML Buildings": 22
+          },
+          "unknownSubtype": 390,
+          "sourceUpdateRange": [
+            "2023-05-01T00:00:00.000Z",
+            "2023-05-01T00:00:00.000Z"
+          ],
+          "downloadSha256": "124267c355e65b3ae628b773cda11e9145579ddcd142e1db878aa8ad93d68e8a",
+          "geojsonOutputBytes": 430252
+        },
+        {
+          "source": "Overture",
+          "release": "2026-10-21.0",
+          "queryFeatures": 779,
+          "selected": 390,
+          "invalidGeometry": 0,
+          "sourceDatasets": {
+            "Google Open Buildings": 368,
+            "Microsoft ML Buildings": 22
+          },
+          "unknownSubtype": 390,
+          "sourceUpdateRange": [
+            "2023-05-01T00:00:00.000Z",
+            "2023-05-01T00:00:00.000Z"
+          ],
+          "downloadSha256": "067fffd9a0c6875495ac1359c274617b10c2ed1b859754875b192ed94550cd32",
+          "geojsonOutputBytes": 430252
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2025-01-01-p2",
+          "mappingDate": "2025-01-01T21:21:00Z",
+          "processingVersion": 2,
+          "selected": 0,
+          "classCounts": {},
+          "sourceSha256": "cf06464cfbe150a70ee1da3dc8bc3dd04f9649b4f360b8a01cc555a37cdbd57f"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-01-01-p2",
+          "mappingDate": "2026-01-01T21:21:30Z",
+          "processingVersion": 2,
+          "selected": 0,
+          "classCounts": {},
+          "sourceSha256": "0e5daee1cf01b26dc6d3e3553cf5c2bf6c4501faf6ec968e25e442b10d5828b1"
+        },
+        {
+          "source": "OSM Geofabrik",
+          "version": "osm-2026-10-01-p2",
+          "mappingDate": "2026-10-01T20:22:06Z",
+          "processingVersion": 2,
+          "selected": 0,
+          "classCounts": {},
+          "sourceSha256": "6fd28e3d15fdf3a2ec4a98cdad458212cb106b942f157ae84368c6a560cccd06"
+        }
+      ]
+    }
+  ],
+  "license": "ODbL-1.0",
+  "attribution": "\u00a9 OpenStreetMap contributors / Geofabrik; Overture Maps Foundation (includes Google Open Buildings and Microsoft ML Buildings)",
+  "acquisitionDatesKnown": false
+}

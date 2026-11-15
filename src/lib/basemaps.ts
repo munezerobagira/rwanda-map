@@ -1,128 +1,110 @@
-// Central registry of every basemap the map can show.
-//
-// Adding a new provider (a new satellite/imagery source, a different tile
-// server, a time-aware provider like Sentinel Hub, etc.) should only ever
-// require adding one entry here - Sidebar.tsx and InteractiveMap.tsx both
-// read from this list generically instead of hardcoding per-provider logic.
-
+// Open/keyless providers by default; Esri is the specific user-requested exception (ADR0010).
+import RWANDA from './regions/rwanda.json';
+import { imageryTileUrl, latestCompleteMonth } from './imagery/periods';
 export interface BasemapTimeParams {
-  /** Currently selected year, for providers that expose an annual mosaic (e.g. EOX s2cloudless). */
+  version?: string;
   year: string;
-  /** Currently selected ISO date (YYYY-MM-DD), for providers that expose per-scene imagery. */
   date: string;
+  start?: string;
+  end?: string;
 }
-
 export interface BasemapDefinition {
   id: string;
   name: string;
   group: string;
   attribution: string;
   maxZoom?: number;
+  maxNativeZoom?: number;
   subdomains?: string;
-  /** Builds the tile URL template. Most providers ignore `params` entirely. */
   buildUrl: (params: BasemapTimeParams) => string;
-  /** Show the year selector for this basemap (e.g. annual cloud-free mosaics). */
   supportsYear?: boolean;
-  /** Show a full date picker for this basemap (e.g. real per-scene imagery, which can show clouds). */
   supportsDate?: boolean;
-  /**
-   * Name of a NEXT_PUBLIC_* env var that must be set for this basemap to work
-   * (API key / instance id for paid or registration-gated providers). If set
-   * but the env var is missing, the basemap is shown disabled in the sidebar
-   * with a hint instead of being wired up with a broken URL.
-   */
-  requiresEnvVar?: string;
-  /** Short note shown in the sidebar under a disabled/unavailable basemap. */
-  unavailableHint?: string;
-  /** Resolution / character chip shown on the basemap card (e.g. "10 m"). */
+  supportsPeriod?: boolean;
   badge?: string;
+  nativeResolutionM: number | null;
+  dateNote: string;
+  userRequestedException?: 'esri';
+  exportAttribution?: string;
 }
-
 export const BASEMAPS: BasemapDefinition[] = [
   {
     id: 'esri',
-    badge: 'Sub-metre',
     name: 'Esri World Imagery',
     group: 'Satellite',
-    attribution:
-      'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+    badge: 'High-res',
+    nativeResolutionM: null,
+    userRequestedException: 'esri',
+    maxNativeZoom: 19,
+    maxZoom: 20,
+    attribution: 'Tiles &copy; <a href="https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9">Esri</a> · Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community',
+    exportAttribution: 'Tiles © Esri | Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community',
+    dateNote: 'Esri reference imagery · resolution and capture dates vary; no selected-period comparison.',
     buildUrl: () => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
   },
   {
     id: 'sentinel2',
+    name: 'Sentinel-2 · dated scenes',
+    group: 'Satellite',
     badge: '10 m',
-    name: 'Sentinel-2 Cloudless',
-    group: 'Satellite',
-    attribution: 'Sentinel-2 cloudless &copy; <a href="https://s2maps.eu">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data)',
+    nativeResolutionM: 10,
+    supportsPeriod: true,
     supportsYear: true,
-    buildUrl: ({ year }) => `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${year}_3857/default/g/{z}/{y}/{x}.jpg`
+    maxNativeZoom: 14,
+    attribution:
+      'Contains modified Copernicus Sentinel data · <a href="https://registry.opendata.aws/sentinel-2-l2a-cogs/">Earth Search</a>',
+    dateNote: 'Least-cloudy scenes in selected period; clouds may remain.',
+    buildUrl: ({ start, end, version }) =>
+      imageryTileUrl(start && end ? { start, end } : latestCompleteMonth(), version)
   },
   {
-    id: 'sentinelhub-truecolor',
-    badge: '10 m · daily',
-    name: 'Sentinel-2 True Color (with clouds)',
+    id: 'sentinel2-2016',
+    name: 'Sentinel-2 · 2016 reference',
     group: 'Satellite',
-    attribution: 'Sentinel Hub / Copernicus Data Space Ecosystem',
-    supportsDate: true,
-    requiresEnvVar: 'NEXT_PUBLIC_SENTINEL_HUB_INSTANCE_ID',
-    unavailableHint: 'Needs a Sentinel Hub instance ID - set NEXT_PUBLIC_SENTINEL_HUB_INSTANCE_ID in .env.local',
-    // Sentinel Hub's WMTS endpoint takes a TIME=<ISO date> param per request,
-    // giving real single-date scenes (clouds included) instead of an annual
-    // cloud-free composite - this is the "more timelines, with clouds" option.
-    buildUrl: ({ date }) =>
-      `https://services.sentinel-hub.com/ogc/wmts/${process.env.NEXT_PUBLIC_SENTINEL_HUB_INSTANCE_ID}?SERVICE=WMTS&REQUEST=GetTile&LAYER=TRUE-COLOR&TILEMATRIXSET=PopularWebMercator256&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg&TIME=${date}`
-  },
-  {
-    id: 'blackmarble',
-    badge: 'Night lights',
-    name: 'NASA Earth at Night',
-    group: 'Night',
-    attribution: 'NASA Earth at Night &copy; NASA &copy; EOX',
-    buildUrl: () => 'https://tiles.maps.eox.at/wmts/1.0.0/blackmarble_3857/default/g/{z}/{y}/{x}.jpg'
-  },
-  {
-    id: 'dark',
-    badge: 'Minimal',
-    name: 'CartoDB Dark Matter',
-    group: 'Vector',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    buildUrl: () => 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    badge: '10 m · 2016',
+    nativeResolutionM: 10,
+    maxNativeZoom: 14,
+    attribution:
+      'Sentinel-2 cloudless · <a href="https://cloudless.eox.at">EOX</a> (Contains modified Copernicus Sentinel data 2016) · CC BY 4.0',
+    dateNote: 'Static 2016 mosaic. Not current imagery; no period comparison.',
+    buildUrl: () => 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg'
   },
   {
     id: 'osm',
+    name: 'OpenStreetMap',
+    group: 'Reference',
     badge: 'Streets',
-    name: 'EOX Street Map',
-    group: 'Vector',
-    attribution: 'Street Map &copy; OpenStreetMap contributors &copy; EOX',
-    buildUrl: () => 'https://tiles.maps.eox.at/wmts/1.0.0/osm_3857/default/g/{z}/{y}/{x}.jpg'
-  },
-  {
-    id: 'terrain',
-    badge: 'Relief',
-    name: 'EOX Terrain Light',
-    group: 'Physical',
-    attribution: 'Terrain &copy; EOX IT Services GmbH',
-    buildUrl: () => 'https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg'
+    nativeResolutionM: null,
+    maxNativeZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ODbL',
+    dateNote: 'Rolling vector cartography; acquisition date and historical tile comparison unavailable.',
+    buildUrl: () => 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
   }
 ];
-
-// One real tile over central Kigali (z11) used as each basemap card's preview,
-// so the picker shows what the imagery actually looks like here rather than
-// asking people to remember what a provider name means.
 const PREVIEW_TILE = { z: 11, x: 1195, y: 1035 };
-
 export function basemapPreviewUrl(basemap: BasemapDefinition, params: BasemapTimeParams): string {
+  // Do not run expensive analysis tiles just to decorate a layer card.
+  if (basemap.supportsPeriod) return '/brand/logo-mark.svg';
   return basemap
     .buildUrl(params)
     .replace('{z}', String(PREVIEW_TILE.z))
     .replace('{x}', String(PREVIEW_TILE.x))
     .replace('{y}', String(PREVIEW_TILE.y))
-    .replace('{s}', basemap.subdomains?.[0] ?? 'a')
+    .replace('{s}', 'a')
     .replace('{r}', '');
 }
-
 export function isBasemapAvailable(basemap: BasemapDefinition): boolean {
-  if (!basemap.requiresEnvVar) return true;
-  return Boolean(process.env[basemap.requiresEnvVar]);
+  if (basemap.id === 'esri') return basemap.userRequestedException === 'esri';
+  return basemap.nativeResolutionM === null ? basemap.id === 'osm' : basemap.nativeResolutionM > 0 && basemap.nativeResolutionM <= 10;
+}
+
+export function basemapReferenceNote(basemap?: BasemapDefinition): string {
+  if (basemap?.id === 'esri') return basemap.dateNote;
+  return basemap?.id === 'sentinel2-2016' ? 'Reference only · 2016 imagery' : 'Rolling reference · no historical tile dates';
+}
+
+// Display zoom is magnification, independent of source pixel size/accuracy.
+export const MAX_DISPLAY_ZOOM = Math.max(RWANDA.mapZoom.max, ...BASEMAPS.filter(isBasemapAvailable).map((source) => source.maxZoom ?? RWANDA.mapZoom.max));
+export function basemapMaxZoom(id?: string): number {
+  const source = BASEMAPS.find((candidate) => candidate.id === id && isBasemapAvailable(candidate));
+  return source?.maxZoom ?? RWANDA.mapZoom.max;
 }

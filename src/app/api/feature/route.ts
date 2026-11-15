@@ -34,10 +34,10 @@ export async function GET(req: NextRequest) {
       { found: true, feature },
       { headers: { 'Cache-Control': 'public, max-age=120, s-maxage=120' } }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('API Error in /api/feature:', err);
     return NextResponse.json(
-      { error: 'Internal Server Error', details: err.message },
+      { error: 'Internal Server Error', details: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500 }
     );
   }

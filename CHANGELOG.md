@@ -2,6 +2,90 @@
 
 Simple running log of notable updates to this project. Newest first.
 
+## 2026-11-15
+
+- Added source/date/use/area inspection to counted markers with safe translated
+  text, existing map colors and preserved selected area. Point markers are
+  explicitly distinguished from actual roof outlines; accuracy is unvalidated.
+
+- Restored Esri World Imagery on explicit user request, with current source
+  attribution, variable-resolution/date labels and credited PNG exports.
+- Made count analysis automatic for eligible selections and directly switchable
+  in the inspector. Esri now has immediate mapping-date controls and comparison
+  on/off independently of imagery; explicit off preference persists in links.
+- Missing mapped coverage shows no available house estimate; both-zero results
+  cannot masquerade as verified no-change. Added real selected-cell mode/export
+  regressions and preserved French/Kinyarwanda/English controls.
+
+- Narrowed boundary file reads so function tracing keeps all six required assets
+  without unrelated building indexes. Largest package falls 87.19→51.35MiB.
+- Added required-asset and dependency-isolation checks for startup, boundaries and
+  analysis. Existing API, selection, time and export regressions remain green.
+
+## 2026-11-14
+
+- Added a verified October 2026 OSM snapshot and explicit processing p2 versions
+  across active dated counts, methods, inspector and combined exports.
+- Corrected disused-building handling with lifecycle fixtures; archived original
+  indexes outside runtime and prevented mixed-source/processing growth metrics.
+- Added zero-coverage warnings and three-setting, two-source audit evidence;
+  source differences are not independent accuracy or house-count validation.
+- 31 TypeScript tests and two ingestion fixtures pass; production traces remain
+  within budget at 87.19MiB maximum. Browser interaction checks remain blocked.
+
+- Added bounded rectangle/polygon selection to the existing map toolbar, sharing
+  dated analysis, focus, inspector, rw/en/fr and PNG/CSV/GeoJSON exports.
+- Added Undo/Cancel/Done and keyboard map-center point entry, explicit user-drawn
+  non-cadastral labels, rounded geometry and fragment-based shared links.
+- Kept village links compatible and added drawn-area two-date/export regressions.
+  Actual mobile drawing/keyboard/download checks remain pending browser access.
+
+- Coalesced identical pending imagery renders without increasing worker/queue
+  limits. Failed/timed-out jobs can retry; period/revision/tile keys stay distinct.
+  Added concurrency, failure, queue timeout and eviction regressions.
+
+- Measured the live bottom controls for shared map/panel spacing; tablet timelines
+  retain full usable width and area selection makes room by closing layers.
+  Added layout-matrix regression checks; browser layout QA remains pending.
+
+- Preserved map pixels in narrow selected-area PNGs and wrapped readable source,
+  date, method and confidence captions. Added stale-capture cancellation and
+  bounded tile/worker waits; downloads use a shared delayed-revoke helper.
+- Fixed focus-mask holes and added seven renderer/consistency regressions.
+  These native-canvas checks do not replace pending browser download QA.
+
+- Added an experimental shared-selection mapped-building module with January
+  2025/2026 OSM source snapshots, source dates/method/low confidence, density,
+  broad use classes, conditional classification ranges and mapped-change metrics.
+- Integrated the result with existing map/layer controls, inspector, rw/en/fr,
+  shareable URL, PNG dots/summary and combined per-date CSV/GeoJSON.
+- Added reproducible privacy-filtered ingestion and hash/schema build checks for
+  ~2.15 million source representative points across two immutable snapshots.
+- Archived original boundary inputs outside web runtime loading; added explicit
+  offline regeneration and whole-build trace budgets including startup code.
+- Hidden synthetic grid demo by a reversible flag; legacy stats now disclose
+  synthetic method/date/confidence, and new exports omit demo grid fields.
+- Corrected product metadata to describe the real map and deployment domain.
+- Thirteen TypeScript tests and one ingestion fixture pass. Physical-house
+  ground-truth validation and browser interaction/download checks remain pending.
+
+- Reduced sample imagery transfer ~81% with WebP90 presentation tiles; user map exports remain PNG.
+- Reduced boundary function trace from 238.1MiB to 51.35MiB by excluding redundant raw inputs.
+- Added a prebuild check for complete GeoJSON assets and actionable Git LFS setup errors.
+- Audited Rwanda building sources, temporal tag changes and per-image imagery rights.
+
+- Added keyless dated 10m Sentinel-2 rendering with bounded COG reads and source validation.
+- Removed credential-gated, coarse, proprietary and noncommercial imagery providers.
+- Added shared two-period swipe, acquisition/cloud metadata, rw/en/fr language switching,
+  per-date selection CSV/GeoJSON, and extended PNG source/date credits.
+- Added regression checks for imagery periods, partial scene coverage and export provenance.
+- Browser interaction/download checks remain pending: supplied browser host unavailable.
+
+- Documented real architecture, feature integration, external sources and phased mission.
+- Established clean lint/typecheck/build baseline using concrete GeoJSON types.
+- Added regression tests for shared selection, search, boundary tiles and URL state.
+- Replaced boilerplate README with runtime and Git LFS setup instructions.
+
 ## 2026-09-25
 
 ### UI - "software" restructure, not a dashboard
@@ -64,3 +148,19 @@ extension point for the planned AI building-detection feature.
 
 ### Known follow-up (not yet done)
 - Per-village `connection_rate` / `peak_load_mw` / `status` in `spatialStore.ts` are formula-generated from the feature's FID, not real measurements, but the UI presents them as if they were. Flagged for a product decision (soften the label vs. wire up real data), not fixed yet.
+
+### Broader building coverage and visible source outlines
+- Add an explicit Overture source with national September/October2026 records;
+  retain OpenStreetMap dates and Esri reference imagery.
+- Inspect actual source footprints, suppliers, dates and use over Esri; hide/show
+  the overlay independently of counting. No validated house-accuracy claim.
+- Share outlines in map PNG and GeoJSON, source/rights/date metadata in CSV,
+  and public immutable derivative data indexes. Two identical source releases
+  reuse all4,293 objects; bounded count-only fallback for large outlines.
+
+### Closer Esri inspection with coverage fallback
+- Permit closer Esri display zoom, fetching finer tiles only after the provider
+  confirms coverage for the entire visible area. Retain existing detail for rural
+  no-data placeholders, failed checks and view changes. Other map limits retained.
+- Keep URL restoration, background reference and PNG fitting consistent. Closer
+  zoom is magnification; it does not establish building-count or imagery accuracy.

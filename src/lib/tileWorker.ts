@@ -1,3 +1,5 @@
+import { basemapMaxZoom } from './basemaps';
+import RWANDA from './regions/rwanda.json';
 import { COUNTRY_TIER, levelForZoom, parentLevel } from './adminLevels';
 import { readUrlState } from './urlState';
 
@@ -47,7 +49,7 @@ export function getTileWorker(): Worker {
 }
 
 // Must match InteractiveMap's defaults and BoundaryTiles' tile size
-const DEFAULT_VIEW = { lat: -1.9403, lng: 29.8739, zoom: 9.3 };
+const DEFAULT_VIEW = RWANDA.initialView;
 const TILE_SIZE = 512;
 
 /**
@@ -59,8 +61,9 @@ const TILE_SIZE = 512;
  * them they're already there (or in flight).
  */
 export function prefetchInitialView() {
-  const view = readUrlState().center ?? DEFAULT_VIEW;
-  const zoom = Math.min(18, Math.max(8, view.zoom));
+  const initial = readUrlState();
+  const view = initial.center ?? DEFAULT_VIEW;
+  const zoom = Math.min(basemapMaxZoom(initial.basemap), Math.max(RWANDA.mapZoom.min, view.zoom));
   const tileZoom = Math.round(zoom);
 
   // Leaflet's spherical-mercator projection at the tile zoom

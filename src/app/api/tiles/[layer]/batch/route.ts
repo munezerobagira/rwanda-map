@@ -63,8 +63,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ laye
     responseCache.set(cacheKey, encoded);
     if (responseCache.size > MAX_CACHED) responseCache.delete(responseCache.keys().next().value!);
     return encodedResponse(encoded, CACHE_HEADERS);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('API Error in /api/tiles/batch:', err);
-    return NextResponse.json({ error: 'Internal Server Error', details: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error', details: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
 }

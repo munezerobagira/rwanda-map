@@ -1,0 +1,46 @@
+{
+  "id": "rwanda",
+  "name": "Rwanda",
+  "currency": "RWF",
+  "languages": ["rw", "en", "fr"],
+  "defaultLanguage": "rw",
+  "bounds": [28.86, -2.84, 30.9, -1.05],
+  "initialView": {
+    "lat": -1.9403,
+    "lng": 29.8739,
+    "zoom": 9.3
+  },
+  "mapZoom": {
+    "min": 8,
+    "max": 18
+  },
+  "buildingSnapshots": ["osm-2025-01-01-p2", "osm-2026-01-01-p2", "osm-2026-10-01-p2"],
+  "analysisBudget": {
+    "maxAreaKm2": 50,
+    "maxVertices": 5000,
+    "maxTiles": 16,
+    "maxFeatures": 10000
+  },
+  "boundaries": {
+    "precomputed": {
+      "country boundary.geojson": 1,
+      "provinces.simplified.geojson": 5,
+      "districts.simplified.geojson": 30,
+      "sectors.simplified.geojson": 416,
+      "cells.simplified.geojson": 2148,
+      "villages.simplified.geojson": 14823
+    },
+    "rawInputs": [
+      "Country_Boundary_7075918429603878793.geojson",
+      "Province_Boundary_4676559859435530581.geojson",
+      "district_boundary_-3032280129748906159.geojson",
+      "sector_boundary_-5923869450411707723.geojson",
+      "cell_boundary_-8868604078708118700.geojson",
+      "village_boundary_-3842883156168712087.geojson"
+    ]
+  },
+  "overtureSnapshots": [
+    "overture-2026-09-23.1-p1",
+    "overture-2026-10-21.0-p1"
+  ]
+}

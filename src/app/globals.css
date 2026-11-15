@@ -219,8 +219,8 @@ body {
   /* One line, truncated - long provider credits otherwise wrap under the bottom bar on phones */
   max-width: 100vw;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-x: auto;
+  /* Credits remain available in full on narrow screens. */
 }
 .leaflet-control-attribution a {
   color: var(--text-secondary) !important;
@@ -237,4 +237,15 @@ body {
 }
 .leaflet-tooltip::before {
   display: none;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-secondary);
 }
